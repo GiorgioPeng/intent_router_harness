@@ -1,0 +1,148 @@
+name = "intent-router-harness"
+version = "0.1.0"
+description = "Standalone spec-driven harness for finance intent-routing experiments."
+agent_paths = ["../agent.md"]
+skill_roots = ["../skills"]
+max_skill_body_chars = 6000
+max_reference_body_chars = 6000
+max_reference_count = 4
+
+[surfaces.intent_recognition]
+system = """
+You classify a user message into candidate intent codes.
+Return only JSON with fields: intent_code and diagnostics.
+"""
+human = """
+Message:
+{message}
+
+Recommendation tasks JSON:
+{recommend_task_json}
+
+Recent router-only display context JSON:
+{recent_messages_json}
+"""
+include_skill_index = true
+
+[surfaces.slot_extraction]
+system = """
+You extract slot values for one selected intent.
+Return only JSON with fields: slots and diagnostics.
+The slots object must use only keys from the provided slot schema.
+For amount slots, return the numeric amount as a string without currency units unless the slot schema explicitly asks for the unit.
+"""
+human = """
+Message:
+{message}
+
+Intent JSON:
+{intent_json}
+
+Slot schema JSON:
+{slot_schema_json}
+"""
+include_skill_index = true
+
+[surfaces.graph_planning]
+system = """
+You plan an execution graph for recognized intents.
+Return only JSON with fields: nodes, edges, and diagnostics.
+Each node must include id, intent_code, slots, and status.
+Use intent_code exactly; do not use intent, intentCode, name, or label as a substitute.
+"""
+human = """
+Message:
+{message}
+
+Recognition JSON:
+{recognition_json}
+
+Recommendation tasks JSON:
+{recommend_task_json}
+
+Recent router-only display context JSON:
+{recent_messages_json}
+"""
+include_skill_index = true
+
+[surfaces.scene_selection]
+system = """
+You select business scene skills for the current router turn.
+Use only the Available Skills name and description from the harness context.
+Return only JSON with fields: skill_names and reason.
+skill_names must be an array of exact skill names listed in Available Skills.
+If no Available Skill matches the message and session state, return an empty skill_names array.
+Do not invent skill names.
+Do not load or summarize skill body content.
+"""
+human = """
+Message:
+{message}
+
+Execution mode:
+{execution_mode}
+
+Session state JSON:
+{session_state_json}
+
+Recommendation tasks JSON:
+{recommend_task_json}
+
+Recent router-only display context JSON:
+{recent_messages_json}
+
+Config variables JSON:
+{config_variables_json}
+"""
+include_skill_index = true
+
+[surfaces.task_planning]
+system = """
+You are a task-first assistant protocol planner.
+Return only JSON matching the provided planner output schema.
+Use task_list and current_task as the primary planning structure.
+Use graph only when the user request contains multiple tasks with ordering, dependency, confirmation, cancellation, or replan semantics.
+For recognizable requests, include recognition.intent_code before business planning fields.
+Use only these status values anywhere a status is required: running, waiting_user_input, ready_for_dispatch, waiting_assistant_completion, completed, cancelled, failed.
+Never output status="pending". Map a not-yet-dispatched task with missing required slots to status="waiting_user_input".
+Use canonical intent_code values from loaded skills. Do not invent generic intent codes such as transfer.
+If required slots are missing, never return ready_for_dispatch.
+Do not copy schema helper keys such as enum, required, fields, rules, description, or examples into the output JSON.
+For "我要转账" with no payee and no amount, output intent_code="AG_TRANS", status="waiting_user_input", completion_reason="router_waiting_user_input", slot_memory={{}}, output={{}}, and ask for收款人 and金额.
+When session_state_json contains an active waiting `AG_TRANS` task, treat the next short user reply as slot input for that task: person-like text fills `payee_name`, numeric or money-like text fills `amount`, and previous slot values must be preserved.
+Active waiting tasks have priority over first-turn recognition examples. If session_state_json has current_task.status="waiting_user_input", continue that task unless the latest message clearly cancels or switches business goals.
+For an active waiting `AG_TRANS` task with missing `payee_name`, if the latest message is a short non-numeric person-like reply, set slot_memory.payee_name and ask only for the remaining missing `amount`.
+For an active waiting `AG_TRANS` task with missing `amount`, if the latest message is numeric or money-like, set slot_memory.amount and ask only for the remaining missing `payee_name` when needed.
+For executionMode="router_only", never invent downstream agent results.
+For executionMode="router_only" with complete required slots, return status="ready_for_dispatch", completion_reason="router_ready_for_dispatch", completion_state=0, and output={{"ishandover": true, "handOverReason": "router_only_ready_for_dispatch"}}.
+Never place slot_memory inside output.
+"""
+human = """
+Message:
+{message}
+
+Execution mode:
+{execution_mode}
+
+Session state JSON:
+{session_state_json}
+
+Recommendation tasks JSON:
+{recommend_task_json}
+
+Recent router-only display context JSON:
+{recent_messages_json}
+
+Config variables JSON:
+{config_variables_json}
+
+Planner output schema JSON:
+{planner_output_schema_json}
+"""
+include_skill_index = true
+
+[[bindings]]
+skill = "finance-routing"
+surfaces = ["intent_recognition", "slot_extraction", "graph_planning", "task_planning"]
+domain_codes = ["finance"]
+load = "metadata"

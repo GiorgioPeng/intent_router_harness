@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "intent-router-harness"
+version = "0.1.0"
+description = "Standalone spec-driven harness for intent routing experiments."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "pydantic>=2.0",
+  "pydantic-settings>=2.0",
+  "uvicorn[standard]>=0.30",
+]
+
+[project.scripts]
+intent-router-harness = "intent_router_harness.__main__:main"
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

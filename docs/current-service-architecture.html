@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Intent Router Harness 当前服务架构</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --line: #8ba0b8;
+      --text: #182230;
+      --muted: #617184;
+      --api: #e7f0ff;
+      --service: #e8f8f0;
+      --runtime: #fff5d9;
+      --llm: #f1e9ff;
+      --protocol: #ffecec;
+      --deploy: #e9fbff;
+      --shadow: 0 8px 22px rgba(18, 34, 54, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", Arial, sans-serif;
+      line-height: 1.55;
+    }
+
+    header {
+      padding: 32px 40px 20px;
+      background: #101827;
+      color: #fff;
+    }
+
+    header h1 {
+      margin: 0 0 10px;
+      font-size: 28px;
+      letter-spacing: 0;
+    }
+
+    header p {
+      margin: 0;
+      color: #c8d3df;
+      max-width: 980px;
+    }
+
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 28px 24px 48px;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid #dce4ee;
+      box-shadow: var(--shadow);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    h2 {
+      margin: 0 0 18px;
+      font-size: 21px;
+    }
+
+    .note {
+      color: var(--muted);
+      margin-top: -8px;
+      margin-bottom: 18px;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(120px, 1fr));
+      gap: 18px;
+      align-items: stretch;
+      overflow-x: auto;
+      padding-bottom: 8px;
+    }
+
+    .node {
+      position: relative;
+      min-height: 118px;
+      padding: 14px;
+      border: 1px solid #cad6e3;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .node::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -18px;
+      width: 18px;
+      border-top: 2px solid var(--line);
+    }
+
+    .node::before {
+      content: "";
+      position: absolute;
+      top: calc(50% - 5px);
+      right: -20px;
+      width: 0;
+      height: 0;
+      border-top: 6px solid transparent;
+      border-bottom: 6px solid transparent;
+      border-left: 8px solid var(--line);
+    }
+
+    .node:last-child::before,
+    .node:last-child::after {
+      display: none;
+    }
+
+    .api { background: var(--api); }
+    .service { background: var(--service); }
+    .runtime { background: var(--runtime); }
+    .llm { background: var(--llm); }
+    .protocol { background: var(--protocol); }
+    .deploy { background: var(--deploy); }
+
+    .node strong {
+      display: block;
+      font-size: 16px;
+      margin-bottom: 6px;
+    }
+
+    .node span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(240px, 1fr));
+      gap: 18px;
+    }
+
+    .module-group {
+      border: 1px solid #d5deea;
+      padding: 16px;
+      background: #fbfcfe;
+    }
+
+    .module-group h3 {
+      margin: 0 0 12px;
+      font-size: 17px;
+    }
+
+    .module {
+      padding: 10px 12px;
+      margin: 8px 0;
+      border: 1px solid #ccd7e4;
+      background: #fff;
+    }
+
+    .module code {
+      font-size: 14px;
+      color: #0f3e6e;
+      font-weight: 600;
+    }
+
+    .module p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .sequence {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 12px 18px;
+      align-items: center;
+    }
+
+    .step-label {
+      padding: 10px 12px;
+      background: #eef3f8;
+      border: 1px solid #d5deea;
+      font-weight: 600;
+    }
+
+    .step-body {
+      padding: 10px 12px;
+      border-left: 3px solid #557aa5;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    th, td {
+      border: 1px solid #d9e1eb;
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #edf3f9;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .log {
+      background: #101827;
+      color: #d6e4f0;
+      padding: 16px;
+      overflow-x: auto;
+      font-size: 13px;
+    }
+
+    @media (max-width: 920px) {
+      .flow {
+        grid-template-columns: 1fr;
+      }
+
+      .node::before,
+      .node::after {
+        display: none;
+      }
+
+      .module-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .sequence {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Intent Router Harness 当前服务架构</h1>
+    <p>意图识别 + spec 驱动 + skill 渐进式加载 + LLM planner + SSE 协议输出。提槽规则在 skill 中，服务层不硬编码业务提槽。</p>
+  </header>
+
+  <main>
+    <section>
+      <h2>总体架构图</h2>
+      <p class="note">一次流式请求从客户端进入，到 spec/skill 渲染、LLM 分析，再回到 SSE 输出。</p>
+      <div class="flow">
+        <div class="node api">
+          <strong>Client</strong>
+          <span>mock assistant / curl / Python 测试脚本</span>
+        </div>
+        <div class="node deploy">
+          <strong>Ingress</strong>
+          <span>ai.intent-router.cc<br>minikube tunnel</span>
+        </div>
+        <div class="node api">
+          <strong>FastAPI ASGI</strong>
+          <span>asgi.py<br>/api/v1/message</span>
+        </div>
+        <div class="node service">
+          <strong>Service Boundary</strong>
+          <span>service.py<br>统一服务入口</span>
+        </div>
+        <div class="node protocol">
+          <strong>Assistant Protocol</strong>
+          <span>assistant_service.py<br>session + frames</span>
+        </div>
+        <div class="node runtime">
+          <strong>Spec + Skill Runtime</strong>
+          <span>runtime.py / skills.py<br>渐进式加载 SKILL.md</span>
+        </div>
+        <div class="node llm">
+          <strong>LLM Planner</strong>
+          <span>planner.py / llm.py<br>真实 LLM JSON 输出</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>请求时序图</h2>
+      <div class="sequence">
+        <div class="step-label">1. 接口请求</div>
+        <div class="step-body"><code>POST /api/v1/message</code>，默认 <code>stream=true</code>，通过 SSE 返回。</div>
+
+        <div class="step-label">2. 读取上下文</div>
+        <div class="step-body"><code>session_store.py</code> 按 <code>sessionId</code> 读取内存态 <code>slot_memory/task_list/current_task</code>。</div>
+
+        <div class="step-label">3. 渲染 surface</div>
+        <div class="step-body"><code>planner.py</code> 调用 <code>PromptHarness.render(surface=task_planning)</code>。</div>
+
+        <div class="step-label">4. 渐进式加载 skill</div>
+        <div class="step-body"><code>runtime.py</code> 根据 surface、domain、capabilities 匹配 <code>finance-routing/SKILL.md</code>。</div>
+
+        <div class="step-label">5. LLM 分析</div>
+        <div class="step-body">LLM 根据 spec + skill + session state 输出 <code>PlannerOutput</code> JSON。</div>
+
+        <div class="step-label">6. 协议适配</div>
+        <div class="step-body"><code>assistant_service.py</code> 将 PlannerOutput 转为 <code>AssistantProtocolFrame</code>。</div>
+
+        <div class="step-label">7. SSE 输出</div>
+        <div class="step-body"><code>asgi.py</code> 输出 <code>event: message</code> 和 <code>event: done</code>。</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>模块图</h2>
+      <div class="module-grid">
+        <div class="module-group">
+          <h3>API 层</h3>
+          <div class="module"><code>asgi.py</code><p>FastAPI、SSE、health、regression 接口。</p></div>
+          <div class="module"><code>server.py</code><p>stdlib HTTP fallback。</p></div>
+          <div class="module"><code>mock_assistant_router_stream.py</code><p>接口测试脚本，默认流式调用。</p></div>
+        </div>
+
+        <div class="module-group">
+          <h3>服务编排层</h3>
+          <div class="module"><code>service.py</code><p>服务边界，整合 harness、assistant、LLM、regression。</p></div>
+          <div class="module"><code>service_factory.py</code><p>根据运行配置装配 service。</p></div>
+          <div class="module"><code>config.py</code><p>spec、regression、LLM env、日志级别。</p></div>
+        </div>
+
+        <div class="module-group">
+          <h3>助手协议层</h3>
+          <div class="module"><code>assistant_service.py</code><p>会话读取、planner 调用、协议帧生成。</p></div>
+          <div class="module"><code>contracts.py</code><p>请求、任务、PlannerOutput、协议帧模型。</p></div>
+          <div class="module"><code>session_store.py</code><p>当前为内存 session。</p></div>
+        </div>
+
+        <div class="module-group">
+          <h3>Spec + Skill Runtime</h3>
+          <div class="module"><code>runtime.py</code><p>PromptHarness，surface 渲染和渐进式加载。</p></div>
+          <div class="module"><code>schema.py</code><p>Harness spec schema。</p></div>
+          <div class="module"><code>skills.py</code><p>SkillLibrary，加载 SKILL.md frontmatter 和 body。</p></div>
+        </div>
+
+        <div class="module-group">
+          <h3>领域配置</h3>
+          <div class="module"><code>finance-router-harness.toml</code><p>surface、prompt、skill binding。</p></div>
+          <div class="module"><code>finance-routing/SKILL.md</code><p>金融意图边界、提槽规则、handover 规则。</p></div>
+        </div>
+
+        <div class="module-group">
+          <h3>LLM 和回归</h3>
+          <div class="module"><code>planner.py</code><p>渲染 prompt，调用 LLM，校验 JSON。</p></div>
+          <div class="module"><code>llm.py</code><p>OpenAI-compatible client。</p></div>
+          <div class="module"><code>regression.py</code><p>助手协议回归用例加载和校验。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>提槽边界</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>位置</th>
+            <th>职责</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>finance-routing/SKILL.md</code></td>
+            <td>定义 <code>AG_TRANS</code> 的必填槽位、短答补槽、槽位继承、缺槽等待、槽齐派发规则。</td>
+          </tr>
+          <tr>
+            <td><code>finance-router-harness.toml</code></td>
+            <td>规定 <code>task_planning</code> 的输出协议和状态机约束。</td>
+          </tr>
+          <tr>
+            <td><code>planner.py</code></td>
+            <td>把 session state、spec、skill 注入 prompt，并调用 LLM 做判断。</td>
+          </tr>
+          <tr>
+            <td><code>assistant_service.py</code></td>
+            <td>只合并 LLM 返回的 <code>slot_memory</code>，不硬编码业务提槽。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Kubernetes 部署图</h2>
+      <div class="flow">
+        <div class="node deploy">
+          <strong>Local Host</strong>
+          <span>ai.intent-router.cc -> 127.0.0.1</span>
+        </div>
+        <div class="node deploy">
+          <strong>minikube tunnel</strong>
+          <span>LoadBalancer 入口</span>
+        </div>
+        <div class="node deploy">
+          <strong>ingress-nginx</strong>
+          <span>host: ai.intent-router.cc</span>
+        </div>
+        <div class="node deploy">
+          <strong>ClusterIP Service</strong>
+          <span>intent-router-harness:8765</span>
+        </div>
+        <div class="node deploy">
+          <strong>Deployment Pod</strong>
+          <span>python:3.12-slim</span>
+        </div>
+        <div class="node deploy">
+          <strong>Mounted Code</strong>
+          <span>ConfigMap app.tar.gz</span>
+        </div>
+        <div class="node llm">
+          <strong>External LLM</strong>
+          <span>OpenAI-compatible API</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>关键日志</h2>
+      <pre class="log"><code>kubectl -n intent logs deploy/intent-router-harness -f | rg 'spec\.|llm\.plan'
+
+spec.progressive_load surface=task_planning metadata_skills=['finance-routing'] body_skills=['finance-routing']
+spec.loaded_skill_body surface=task_planning skill=finance-routing ...
+llm.plan.raw_response session_id=... content=...
+llm.plan.parsed_json session_id=...
+llm.plan.validated session_id=... status=waiting_user_input intent_code=AG_TRANS</code></pre>
+    </section>
+  </main>
+</body>
+</html>
