@@ -214,6 +214,31 @@ def test_skill_without_description_is_hidden_from_metadata_but_can_be_loaded_exp
     assert "内部补充规则" in explicit_prompt.system
 
 
+def test_finance_prompt_contains_ordinal_multi_task_slot_rule() -> None:
+    harness = load_prompt_harness(Path("examples/finance-router-harness.toml"))
+    assert harness is not None
+
+    prompt = harness.render(
+        surface="task_planning",
+        variables={
+            "message": "第一次给100元",
+            "execution_mode": "router_only",
+            "task_state_json": "{}",
+            "recommend_task_json": "[]",
+            "recent_messages_json": "[]",
+            "config_variables_json": "[]",
+            "planner_output_schema_json": "{}",
+        },
+        domain_codes=("finance",),
+        capabilities=("routing", "slots", "planning"),
+        loaded_skill_names=("finance-routing",),
+    )
+
+    assert "第一次给100元" in prompt.system
+    assert "task_list[0]" in prompt.system
+    assert "按 task_list 顺序" in prompt.system
+
+
 def test_unknown_template_variables_are_preserved(tmp_path: Path) -> None:
     harness = load_prompt_harness(_write_demo_harness(tmp_path))
     assert harness is not None

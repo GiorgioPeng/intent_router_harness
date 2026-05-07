@@ -352,6 +352,7 @@ def _planner_output_schema_json() -> str:
             "如果 router_only 模式下必填槽位齐全，使用 status=ready_for_dispatch 和 completion_reason=router_ready_for_dispatch。",
             "只能使用已加载 skill 中声明的标准 intent_code，不要编造展示名或泛化标签。",
             "当 task runtime state 中存在等待中的活跃任务时，将短回复优先解释为该任务的槽位值，并保留已有 slot_memory。",
+            "当 task runtime state 中存在多个等待任务时，第一笔/第一次/第一个、第二笔/第二次/第二个等顺序表达应按 task_list 顺序定位任务并补充对应 slot_memory。",
             "recommendTask 只作为当前轮 router 上下文；只有用户明确选择全部、部分或指定推荐任务时，才基于推荐任务创建 task。",
             "如果用户未采纳推荐任务而表达其他诉求，不要把推荐任务写入 task_list。",
             "如果用户没有对推荐任务做出选择，recommendTask 不得影响后续 task runtime state。",
@@ -494,6 +495,54 @@ def _planner_output_schema_json() -> str:
                 },
                 "message": "请提供第一笔转账金额",
                 "output": {},
+            },
+            "multi_transfer_first_amount_reply": {
+                "mode": "slot_filling",
+                "status": "ready_for_dispatch",
+                "completion_state": 0,
+                "completion_reason": "router_ready_for_dispatch",
+                "intent_code": "AG_TRANS",
+                "recognition": {
+                    "intent_code": "AG_TRANS",
+                },
+                "slot_memory": {"payee_name": "王阳明", "amount": "100"},
+                "task_list": [
+                    {
+                        "taskId": "task_001",
+                        "intent_code": "AG_TRANS",
+                        "status": "ready_for_dispatch",
+                        "title": "转账给王阳明",
+                        "slot_memory": {"payee_name": "王阳明", "amount": "100"},
+                        "output": {
+                            "ishandover": True,
+                            "handOverReason": "router_only_ready_for_dispatch",
+                        },
+                    },
+                    {
+                        "taskId": "task_002",
+                        "intent_code": "AG_TRANS",
+                        "status": "waiting_user_input",
+                        "title": "转账给李正义",
+                        "slot_memory": {"payee_name": "李正义"},
+                        "output": {},
+                    },
+                ],
+                "current_task": {
+                    "taskId": "task_001",
+                    "intent_code": "AG_TRANS",
+                    "status": "ready_for_dispatch",
+                    "title": "转账给王阳明",
+                    "slot_memory": {"payee_name": "王阳明", "amount": "100"},
+                    "output": {
+                        "ishandover": True,
+                        "handOverReason": "router_only_ready_for_dispatch",
+                    },
+                },
+                "message": "",
+                "output": {
+                    "ishandover": True,
+                    "handOverReason": "router_only_ready_for_dispatch",
+                },
             },
         },
     }
