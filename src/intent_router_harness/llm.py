@@ -125,11 +125,11 @@ class OpenAICompatibleLLMClient:
             [
                 {
                     "role": "system",
-                    "content": "You are a connectivity checker. Reply with the shortest possible answer.",
+                    "content": "你是连通性检查器。请用最短答案回复。",
                 },
                 {
                     "role": "user",
-                    "content": "Return exactly: OK",
+                    "content": "只返回：OK",
                 },
             ],
             max_tokens=8,

@@ -38,12 +38,12 @@ def _write_minimal_harness(tmp_path: Path) -> Path:
                 'version = "2026.04"',
                 "",
                 "[surfaces.intent_recognition]",
-                'system = "Classify."',
-                'human = "Message: {message}"',
+                'system = "识别。"',
+                'human = "用户消息：{message}"',
                 "",
                 "[surfaces.task_planning]",
-                'system = "Plan."',
-                'human = "Message: {message}"',
+                'system = "规划。"',
+                'human = "用户消息：{message}"',
             ]
         )
         + "\n",

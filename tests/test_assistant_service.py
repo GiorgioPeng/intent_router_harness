@@ -45,8 +45,8 @@ def _write_minimal_harness(tmp_path: Path) -> Path:
                 'version = "2026.04"',
                 "",
                 "[surfaces.task_planning]",
-                'system = "Return planner JSON."',
-                'human = "Message: {message}"',
+                'system = "返回 planner JSON。"',
+                'human = "用户消息：{message}"',
             ]
         )
         + "\n",

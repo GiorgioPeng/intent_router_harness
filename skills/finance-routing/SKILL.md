@@ -1,70 +1,70 @@
 ---
 name: finance-routing
-description: "Finance transfer/remittance routing rules for AG_TRANS slot filling and handoff."
+description: "识别并处理转账/汇款意图 AG_TRANS 的补槽与交接规则。"
 surfaces: ["scene_selection", "intent_recognition", "slot_extraction", "graph_planning", "task_planning"]
 intent_codes: ["AG_TRANS"]
 domain_codes: ["finance"]
 capabilities: ["routing", "slots", "graph", "planning"]
-references: [{"id": "ref_001", "path": "references/ref_001.md", "purpose": "Detailed AG_TRANS slot and router-only handoff constraints"}]
+references: [{"id": "ref_001", "path": "references/ref_001.md", "purpose": "AG_TRANS 槽位与 router_only 交接细则"}]
 ---
 
-# Finance Routing
+# 转账意图路由规则
 
-Use this skill when the active candidate is the transfer/remittance intent `AG_TRANS`.
+本 skill 仅用于转账/汇款业务意图 `AG_TRANS`。
 
-## Intent Boundaries
+## 意图边界
 
-- A single transfer or remittance action is one business intent.
-- Recipient, amount, account number, card suffix, currency, bill period, and similar values are slots.
-- Do not split one transfer action into extra intents only because multiple slot values appear.
-- Multiple intents require explicit independent actions, sequencing, parallelism, or conditions.
-- If the user cancels the active finance action during slot filling, end the active node with `assistant_cancel` instead of continuing to request old slots.
-- If the user switches to a new finance goal during slot filling, replan around the new goal instead of stuffing the new utterance into the old slot schema.
+- 一次转账或汇款诉求是一个业务意图。
+- 收款人、金额、账号、银行卡尾号、币种、账期等是槽位，不是独立意图。
+- 不要因为一句话里出现多个槽位值，就把一次转账拆成多个意图。
+- 只有用户明确表达多个独立业务动作、先后顺序、条件关系或重复办理时，才识别为多意图。
+- 如果用户在补槽过程中取消当前转账任务，应将当前节点结束为 `assistant_cancel`，不要继续追问旧槽位。
+- 如果用户在补槽过程中切换到新的业务目标，应围绕新目标重新规划，不要把新诉求塞进旧任务槽位。
 
-## Canonical Finance Intent
+## 标准业务意图
 
-- Use `AG_TRANS` for transfer/remittance requests such as "转账", "汇款", "给某人转钱", or "我要转账".
-- Do not output generic labels such as `transfer`, `payment`, or Chinese display names as `intent_code`.
-- For `AG_TRANS`, required slots are `payee_name` and `amount`.
-- If an `AG_TRANS` request is missing any required slot, return `status="waiting_user_input"` and `completion_reason="router_waiting_user_input"`.
-- For missing `AG_TRANS` slots, keep known slots in `slot_memory`, keep `output` empty, and ask only for missing required values in `message`.
-- For "我要转账" with no payee and no amount, recognize `AG_TRANS` and ask for both收款人 and金额.
+- 转账、汇款、给某人转钱、我要转账等表达，统一使用 `AG_TRANS`。
+- 不要输出 `transfer`、`payment`、中文展示名等非标准 `intent_code`。
+- `AG_TRANS` 必填槽位是 `payee_name` 和 `amount`。
+- 如果 `AG_TRANS` 缺少任一必填槽位，返回 `status="waiting_user_input"` 和 `completion_reason="router_waiting_user_input"`。
+- 缺槽时保留已知槽位到 `slot_memory`，`output` 保持为空，只在 `message` 中询问缺失槽位。
+- 用户说“我要转账”且没有收款人和金额时，应识别 `AG_TRANS`，并同时询问收款人和金额。
 
-## Slot Grounding
+## 槽位依据
 
-- Extract only values supported by the current message, source fragment, recommendation payload, or allowed history policy.
-- Prefer registered slot semantics over raw string similarity.
-- When several slots share the same value type, bind by label, aliases, semantic definition, and source fragment.
-- For `amount`, store the numeric amount as a string without currency units unless a dedicated currency slot exists.
-- When session state has an active `AG_TRANS` task waiting for input, treat a short person-name reply such as "小明", "张三", or "小红吧" as `payee_name` if `payee_name` is missing.
-- When session state has an active `AG_TRANS` task waiting for input, treat a numeric or money-like reply such as "200", "200元", or "两百" as `amount` if `amount` is missing.
-- Active waiting slot filling has priority over first-turn examples. If the latest message fills one missing slot, do not restart the task or ask again for slots that are already filled.
-- For active `AG_TRANS` with missing `payee_name`, a short non-numeric person-like reply must update `slot_memory.payee_name` and the next `message` should ask only for `amount`.
-- For active `AG_TRANS` with missing `amount`, a numeric or money-like reply must update `slot_memory.amount` and the next `message` should ask only for `payee_name` if that slot is still missing.
-- Preserve already collected active-task slots from session state and merge only newly grounded values from the latest message.
-- After filling one missing `AG_TRANS` slot, remain `waiting_user_input` if any required slot is still missing.
-- If all `AG_TRANS` required slots are present in `router_only`, return `ready_for_dispatch` with the required handover output.
+- 只抽取当前消息、明确上下文、推荐任务或允许的历史策略中有依据的值。
+- 槽位绑定优先依据槽位语义、标签、别名和来源片段，不要只靠字符串相似度。
+- 多个槽位可能共享同一值类型时，必须根据语义判断归属。
+- `amount` 保存为不带单位的数字字符串，除非未来 skill 明确引入独立币种槽位。
+- 当 session 中存在等待补槽的 `AG_TRANS` 任务时，短人名回复如“小明”“张三”“小红吧”应填入缺失的 `payee_name`。
+- 当 session 中存在等待补槽的 `AG_TRANS` 任务时，数字或金额表达如“200”“200元”“两百”应填入缺失的 `amount`。
+- 等待中的补槽任务优先于首轮识别示例；最新输入填充一个缺失槽位后，不要重启任务，也不要重复询问已有槽位。
+- 当前 `AG_TRANS` 缺少 `payee_name` 时，如果最新消息是短的非数字人名表达，应更新 `slot_memory.payee_name`，下一句只询问剩余缺失的 `amount`。
+- 当前 `AG_TRANS` 缺少 `amount` 时，如果最新消息是数字或金额表达，应更新 `slot_memory.amount`，必要时只询问剩余缺失的 `payee_name`。
+- 必须保留当前任务已收集的槽位，只合并最新消息中有依据的新槽位。
+- 填完一个缺失槽位后，如果仍缺少其他必填槽位，继续保持 `waiting_user_input`。
+- 在 `router_only` 模式下，如果 `AG_TRANS` 的必填槽位都已齐全，返回 `ready_for_dispatch` 和必需的交接输出。
 
-## Graph Planning
+## 任务图规划
 
-- One complete business action should produce one node.
-- Use multiple nodes only for explicit repeated actions, independent goals, or structured relations.
-- Prefer `task_list` and `current_task` as the primary planning output.
-- Use `graph` only when dependencies, ordering, graph confirmation, cancellation, or replan semantics must be represented.
-- Each graph node must expose the selected business intent as `intent_code`.
-- Do not use `intent`, `intentCode`, `name`, or display labels as a replacement for `intent_code`.
-- Condition thresholds belong in edge conditions, not node slot memory.
-- Preserve one execution order across the recognition frame, `task_list`, and any graph-card nodes.
-- If graph compilation changes the model's raw recognition order, emit the recognition frame in compiled graph-node order.
+- 一个完整转账动作只生成一个任务节点。
+- 只有明确重复办理、多个独立目标、顺序关系或条件关系时，才生成多个节点。
+- 优先使用 `task_list` 和 `current_task` 表达规划结果。
+- 仅当存在依赖、顺序、图确认、取消或重规划语义时，才使用 `graph`。
+- 每个图节点必须暴露标准业务 `intent_code`。
+- 不要用 `intent`、`intentCode`、`name` 或展示名代替 `intent_code`。
+- 条件阈值应放在边条件中，不要写入节点槽位。
+- 意图识别帧、`task_list` 和 graph card 节点必须保持同一执行顺序。
+- 如果图编排改变了模型原始识别顺序，应按编排后的图节点顺序输出识别帧。
 
-## Router-Only Context
+## Router-Only 上下文
 
-- `recommendTask` and `currentDisplay` are router-only recognition and planning context.
-- They may influence intent recognition and graph planning prompts.
-- Do not pass `recommendTask` into downstream agent task input context.
-- Do not replace downstream agent recent messages with `currentDisplay`; use router-owned session history for agent context.
+- `recommendTask` 和 `currentDisplay` 只属于 router 的识别与规划上下文。
+- 它们可以影响意图识别和任务图规划 prompt。
+- 不要把 `recommendTask` 传给下游 agent 的任务输入上下文。
+- 不要用 `currentDisplay` 替代下游 agent 的最近消息；agent 上下文应由 router 自己的 session 历史控制。
 
-## Handover Semantics
+## 交接语义
 
-- In `router_only`, a ready node should return a non-empty handover output with `ishandover=true` and `handOverReason="router_only_ready_for_dispatch"`.
-- A business agent result with `ishandover=true` and an empty `output` is not a successful result; route the same task to the configured fallback intent or agent.
+- 在 `router_only` 模式下，ready 节点必须返回非空交接输出，且 `ishandover=true`、`handOverReason="router_only_ready_for_dispatch"`。
+- 如果业务 agent 返回 `ishandover=true` 但 `output` 为空，不视为成功结果；应将同一任务路由到配置的兜底意图或 agent。

@@ -140,7 +140,7 @@ class PromptHarness:
             surface,
             [str(context.path) for context in self.agent_contexts],
         )
-        lines = ["## Agent Context"]
+        lines = ["## Agent 根指令"]
         event_data: list[dict[str, Any]] = []
         for context in self.agent_contexts:
             lines.extend([f"### {context.path.name}", context.body])
@@ -240,21 +240,21 @@ class PromptHarness:
         ]
 
         lines = [
-            "## Harness Context",
-            f"- Harness: {self.spec.name}@{self.spec.version}",
-            f"- Surface: {context.surface}",
-            "- Contract: preserve the surface output schema exactly.",
+            "## Harness 上下文",
+            f"- Harness：{self.spec.name}@{self.spec.version}",
+            f"- Surface：{context.surface}",
+            "- 契约：必须严格保持当前 surface 要求的输出 schema。",
         ]
         if self.spec.description:
-            lines.append(f"- Description: {self.spec.description}")
+            lines.append(f"- 描述：{self.spec.description}")
 
         if metadata_skills:
-            lines.extend(["", "### Available Skills"])
+            lines.extend(["", "### 可用 Skill 摘要"])
             for skill in metadata_skills:
                 lines.append(f"- {skill.name}: {skill.description}")
 
         if body_skills:
-            lines.extend(["", "### Loaded Skills"])
+            lines.extend(["", "### 已加载 Skill 正文"])
             for skill in body_skills:
                 logger.info(
                     "spec.loaded_skill_body surface=%s skill=%s path=%s body_chars=%d truncated_to=%d",
@@ -323,13 +323,13 @@ class PromptHarness:
                     },
                 }
             )
-            lines.extend(["", "### Available References"])
+            lines.extend(["", "### 可用 Reference 摘要"])
             for reference_id, (skill, reference) in sorted(available_references.items()):
                 purpose = f": {reference.purpose}" if reference.purpose else ""
                 lines.append(f"- {reference_id} ({skill.name}){purpose}")
 
         if loaded_references:
-            lines.extend(["", "### Loaded References"])
+            lines.extend(["", "### 已加载 Reference 正文"])
             for reference_id, skill, reference in loaded_references:
                 rendered_body = _truncate(reference.body, self.spec.max_reference_body_chars)
                 logger.info(
@@ -588,4 +588,4 @@ def _dedupe(values: tuple[str, ...]) -> list[str]:
 def _truncate(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
-    return f"{value[:limit].rstrip()}\n...[truncated by intent-router harness]"
+    return f"{value[:limit].rstrip()}\n...[已由 intent-router harness 截断]"

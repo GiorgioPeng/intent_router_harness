@@ -18,15 +18,15 @@ def _write_demo_harness(tmp_path: Path) -> Path:
             [
                 "---",
                 "name: transfer-routing",
-                "description: Transfer routing rules for finance intents",
+                "description: 转账路由规则",
                 'surfaces: ["intent_recognition"]',
                 'intent_codes: ["transfer"]',
                 'domain_codes: ["finance"]',
                 'capabilities: ["routing"]',
                 "---",
-                "# Transfer Routing",
+                "# 转账路由规则",
                 "",
-                "Treat recipient names, amount, account numbers, and card suffixes as slots.",
+                "将收款人、金额、账号和银行卡尾号视为槽位。",
             ]
         )
         + "\n",
@@ -41,8 +41,8 @@ def _write_demo_harness(tmp_path: Path) -> Path:
                 f'skill_roots = ["{skills_root.as_posix()}"]',
                 "",
                 "[surfaces.intent_recognition]",
-                'system = "Classify the message."',
-                'human = "Message: {message}"',
+                'system = "识别用户消息。"',
+                'human = "用户消息：{message}"',
                 "include_skill_index = true",
                 "",
                 "[[bindings]]",
@@ -78,7 +78,7 @@ def test_service_renders_prompt_response(tmp_path: Path) -> None:
     assert health.surfaces == ["intent_recognition"]
     assert response.messages[0]["role"] == "system"
     assert response.loaded_skills == ["transfer-routing"]
-    assert "Treat recipient names" in response.system
+    assert "将收款人" in response.system
 
 
 def test_http_server_exposes_only_health_and_business_routes(tmp_path: Path) -> None:

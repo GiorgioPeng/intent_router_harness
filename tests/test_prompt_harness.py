@@ -16,16 +16,16 @@ def _write_demo_harness(tmp_path: Path) -> Path:
             [
                 "---",
                 "name: transfer-routing",
-                "description: Transfer routing rules for finance intents",
+                "description: 转账路由规则",
                 'surfaces: ["intent_recognition"]',
                 'intent_codes: ["transfer"]',
                 'domain_codes: ["finance"]',
                 'capabilities: ["routing"]',
                 "---",
-                "# Transfer Routing",
+                "# 转账路由规则",
                 "",
-                "Treat recipient names, amount, account numbers, and card suffixes as slots.",
-                "Do not split one transfer request into separate recipient or amount intents.",
+                "将收款人、金额、账号和银行卡尾号视为槽位。",
+                "不要把一次转账请求拆成收款人或金额等独立意图。",
             ]
         )
         + "\n",
@@ -42,8 +42,8 @@ def _write_demo_harness(tmp_path: Path) -> Path:
                 "max_skill_body_chars = 2000",
                 "",
                 "[surfaces.intent_recognition]",
-                'system = "Classify the message."',
-                'human = "Message: {message}\\nContext: {missing_context}"',
+                'system = "识别用户消息。"',
+                'human = "用户消息：{message}\\nContext: {missing_context}"',
                 "include_skill_index = true",
                 "",
                 "[[bindings]]",
@@ -76,9 +76,9 @@ def test_prompt_harness_loads_skill_body_only_when_binding_matches(tmp_path: Pat
     assert transfer_prompt.metadata_skills == ("transfer-routing",)
     assert transfer_prompt.loaded_skills == ("transfer-routing",)
     assert "finance-router-harness@2026.04" in transfer_prompt.system
-    assert "transfer-routing: Transfer routing rules" in transfer_prompt.system
-    assert "Treat recipient names" in transfer_prompt.system
-    assert "Message: transfer 500 to Alice" in transfer_prompt.human
+    assert "transfer-routing: 转账路由规则" in transfer_prompt.system
+    assert "将收款人" in transfer_prompt.system
+    assert "用户消息：transfer 500 to Alice" in transfer_prompt.human
 
     other_prompt = harness.render(
         surface="intent_recognition",
@@ -91,7 +91,7 @@ def test_prompt_harness_loads_skill_body_only_when_binding_matches(tmp_path: Pat
     )
 
     assert other_prompt.loaded_skills == ()
-    assert "Treat recipient names" not in other_prompt.system
+    assert "将收款人" not in other_prompt.system
 
 
 def test_prompt_harness_rejects_skill_with_multiple_intents(tmp_path: Path) -> None:
@@ -120,8 +120,8 @@ def test_prompt_harness_rejects_skill_with_multiple_intents(tmp_path: Path) -> N
                 f'skill_roots = ["{skills_root.as_posix()}"]',
                 "",
                 "[surfaces.intent_recognition]",
-                'system = "Classify."',
-                'human = "Message: {message}"',
+                'system = "识别。"',
+                'human = "用户消息：{message}"',
             ]
         )
         + "\n",
@@ -147,25 +147,25 @@ def test_unknown_template_variables_are_preserved(tmp_path: Path) -> None:
 
 def test_prompt_harness_loads_agent_and_authorized_reference(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent.md"
-    agent_path.write_text("Root router contract.", encoding="utf-8")
+    agent_path.write_text("根路由约束。", encoding="utf-8")
     skills_root = tmp_path / "skills"
     skill_dir = skills_root / "transfer-routing"
     reference_dir = skill_dir / "references"
     reference_dir.mkdir(parents=True)
-    (reference_dir / "ref_001.md").write_text("Detailed transfer slot rules.", encoding="utf-8")
+    (reference_dir / "ref_001.md").write_text("详细转账槽位规则。", encoding="utf-8")
     (skill_dir / "SKILL.md").write_text(
         "\n".join(
             [
                 "---",
                 "name: transfer-routing",
-                "description: Transfer routing rules for finance intents",
+                "description: 转账路由规则",
                 'surfaces: ["intent_recognition"]',
                 'domain_codes: ["finance"]',
                 'capabilities: ["routing"]',
                 'references: [{"id": "ref_001", "path": "references/ref_001.md", "purpose": "Transfer slot detail"}]',
                 "---",
-                "# Transfer Routing",
-                "Treat recipient names as slots.",
+                "# 转账路由规则",
+                "将收款人 as slots.",
             ]
         )
         + "\n",
@@ -181,8 +181,8 @@ def test_prompt_harness_loads_agent_and_authorized_reference(tmp_path: Path) -> 
                 f'skill_roots = ["{skills_root.as_posix()}"]',
                 "",
                 "[surfaces.intent_recognition]",
-                'system = "Classify."',
-                'human = "Message: {message}"',
+                'system = "识别。"',
+                'human = "用户消息：{message}"',
                 "",
                 "[[bindings]]",
                 'skill = "transfer-routing"',
@@ -209,8 +209,8 @@ def test_prompt_harness_loads_agent_and_authorized_reference(tmp_path: Path) -> 
     assert prompt.agent_contexts == (agent_path.as_posix(),)
     assert prompt.loaded_skills == ("transfer-routing",)
     assert prompt.loaded_references == ("ref_001",)
-    assert "Root router contract." in prompt.system
-    assert "Detailed transfer slot rules." in prompt.system
+    assert "根路由约束。" in prompt.system
+    assert "详细转账槽位规则。" in prompt.system
     assert any(event["stage"] == "agent_context_loaded" for event in prompt.trace_events)
     assert any(event["stage"] == "reference_body_loaded" for event in prompt.trace_events)
 

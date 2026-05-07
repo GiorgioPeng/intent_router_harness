@@ -1,6 +1,6 @@
 name = "intent-router-harness"
 version = "0.1.0"
-description = "Standalone spec-driven harness for finance intent-routing experiments."
+description = "面向金融意图路由实验的独立 spec 驱动 harness。"
 agent_paths = ["../agent.md"]
 skill_roots = ["../skills"]
 max_skill_body_chars = 6000
@@ -9,134 +9,134 @@ max_reference_count = 4
 
 [surfaces.intent_recognition]
 system = """
-You classify a user message into candidate intent codes.
-Return only JSON with fields: intent_code and diagnostics.
+你负责将用户消息识别为候选业务意图代码。
+只返回 JSON，字段为：intent_code 和 diagnostics。
 """
 human = """
-Message:
+用户消息：
 {message}
 
-Recommendation tasks JSON:
+推荐任务 JSON：
 {recommend_task_json}
 
-Recent router-only display context JSON:
+最近 router-only 展示上下文 JSON：
 {recent_messages_json}
 """
 include_skill_index = true
 
 [surfaces.slot_extraction]
 system = """
-You extract slot values for one selected intent.
-Return only JSON with fields: slots and diagnostics.
-The slots object must use only keys from the provided slot schema.
-For amount slots, return the numeric amount as a string without currency units unless the slot schema explicitly asks for the unit.
+你负责为一个已选业务意图抽取槽位值。
+只返回 JSON，字段为：slots 和 diagnostics。
+slots 对象只能使用给定槽位 schema 中的键。
+金额类槽位默认返回不带币种单位的数字字符串，除非槽位 schema 明确要求保留单位。
 """
 human = """
-Message:
+用户消息：
 {message}
 
-Intent JSON:
+意图 JSON：
 {intent_json}
 
-Slot schema JSON:
+槽位 schema JSON：
 {slot_schema_json}
 """
 include_skill_index = true
 
 [surfaces.graph_planning]
 system = """
-You plan an execution graph for recognized intents.
-Return only JSON with fields: nodes, edges, and diagnostics.
-Each node must include id, intent_code, slots, and status.
-Use intent_code exactly; do not use intent, intentCode, name, or label as a substitute.
+你负责为已识别意图规划执行图。
+只返回 JSON，字段为：nodes、edges 和 diagnostics。
+每个节点必须包含 id、intent_code、slots 和 status。
+必须准确使用 intent_code；不要用 intent、intentCode、name 或 label 替代。
 """
 human = """
-Message:
+用户消息：
 {message}
 
-Recognition JSON:
+识别结果 JSON：
 {recognition_json}
 
-Recommendation tasks JSON:
+推荐任务 JSON：
 {recommend_task_json}
 
-Recent router-only display context JSON:
+最近 router-only 展示上下文 JSON：
 {recent_messages_json}
 """
 include_skill_index = true
 
 [surfaces.scene_selection]
 system = """
-You select business scene skills for the current router turn.
-Use only the Available Skills name and description from the harness context.
-Return only JSON with fields: skill_names and reason.
-skill_names must be an array of exact skill names listed in Available Skills.
-If no Available Skill matches the message and session state, return an empty skill_names array.
-Do not invent skill names.
-Do not load or summarize skill body content.
+你负责为当前 router 轮次选择业务场景 skill。
+只能使用 harness 上下文中“可用 Skill 摘要”的 name 和 description。
+只返回 JSON，字段为：skill_names 和 reason。
+skill_names 必须是“可用 Skill 摘要”中列出的精确 skill name 数组。
+如果没有任何可用 skill 匹配当前消息和 session 状态，返回空数组。
+不要编造 skill name。
+不要加载或总结 skill 正文。
 """
 human = """
-Message:
+用户消息：
 {message}
 
-Execution mode:
+执行模式：
 {execution_mode}
 
-Session state JSON:
+Session 状态 JSON：
 {session_state_json}
 
-Recommendation tasks JSON:
+推荐任务 JSON：
 {recommend_task_json}
 
-Recent router-only display context JSON:
+最近 router-only 展示上下文 JSON：
 {recent_messages_json}
 
-Config variables JSON:
+配置变量 JSON：
 {config_variables_json}
 """
 include_skill_index = true
 
 [surfaces.task_planning]
 system = """
-You are a task-first assistant protocol planner.
-Return only JSON matching the provided planner output schema.
-Use task_list and current_task as the primary planning structure.
-Use graph only when the user request contains multiple tasks with ordering, dependency, confirmation, cancellation, or replan semantics.
-For recognizable requests, include recognition.intent_code before business planning fields.
-Use only these status values anywhere a status is required: running, waiting_user_input, ready_for_dispatch, waiting_assistant_completion, completed, cancelled, failed.
-Never output status="pending". Map a not-yet-dispatched task with missing required slots to status="waiting_user_input".
-Use canonical intent_code values from loaded skills. Do not invent generic intent codes such as transfer.
-If required slots are missing, never return ready_for_dispatch.
-Do not copy schema helper keys such as enum, required, fields, rules, description, or examples into the output JSON.
-For "我要转账" with no payee and no amount, output intent_code="AG_TRANS", status="waiting_user_input", completion_reason="router_waiting_user_input", slot_memory={{}}, output={{}}, and ask for收款人 and金额.
-When session_state_json contains an active waiting `AG_TRANS` task, treat the next short user reply as slot input for that task: person-like text fills `payee_name`, numeric or money-like text fills `amount`, and previous slot values must be preserved.
-Active waiting tasks have priority over first-turn recognition examples. If session_state_json has current_task.status="waiting_user_input", continue that task unless the latest message clearly cancels or switches business goals.
-For an active waiting `AG_TRANS` task with missing `payee_name`, if the latest message is a short non-numeric person-like reply, set slot_memory.payee_name and ask only for the remaining missing `amount`.
-For an active waiting `AG_TRANS` task with missing `amount`, if the latest message is numeric or money-like, set slot_memory.amount and ask only for the remaining missing `payee_name` when needed.
-For executionMode="router_only", never invent downstream agent results.
-For executionMode="router_only" with complete required slots, return status="ready_for_dispatch", completion_reason="router_ready_for_dispatch", completion_state=0, and output={{"ishandover": true, "handOverReason": "router_only_ready_for_dispatch"}}.
-Never place slot_memory inside output.
+你是以任务为中心的助手协议 planner。
+只返回符合给定 planner output schema 的 JSON。
+优先使用 task_list 和 current_task 表达规划结构。
+只有当用户请求包含多个任务，且存在顺序、依赖、确认、取消或重规划语义时，才使用 graph。
+对于可识别请求，应在业务规划字段前给出 recognition.intent_code。
+任何需要 status 的位置，只能使用以下值：running、waiting_user_input、ready_for_dispatch、waiting_assistant_completion、completed、cancelled、failed。
+不要输出 status="pending"。尚未派发且缺少必填槽位的任务应使用 status="waiting_user_input"。
+只能使用已加载 skill 中声明的标准 intent_code，不要编造 transfer 这类泛化意图代码。
+如果必填槽位缺失，绝不能返回 ready_for_dispatch。
+不要把 enum、required、fields、rules、description、examples 等 schema 辅助键复制到输出 JSON。
+用户说“我要转账”且没有收款人和金额时，应输出 intent_code="AG_TRANS"、status="waiting_user_input"、completion_reason="router_waiting_user_input"、slot_memory={{}}、output={{}}，并询问收款人和金额。
+当 session_state_json 中存在等待中的 `AG_TRANS` 任务时，下一条短回复应优先视为该任务的槽位输入：人名式文本填 `payee_name`，数字或金额式文本填 `amount`，并保留已有槽位值。
+等待中的活跃任务优先于首轮识别示例。如果 session_state_json 中 current_task.status="waiting_user_input"，除非最新消息明确取消或切换业务目标，否则继续该任务。
+活跃 `AG_TRANS` 缺少 `payee_name` 时，如果最新消息是短的非数字人名表达，应设置 slot_memory.payee_name，并只询问剩余缺失的 `amount`。
+活跃 `AG_TRANS` 缺少 `amount` 时，如果最新消息是数字或金额表达，应设置 slot_memory.amount，必要时只询问剩余缺失的 `payee_name`。
+executionMode="router_only" 时，不要编造下游 agent 执行结果。
+executionMode="router_only" 且必填槽位齐全时，返回 status="ready_for_dispatch"、completion_reason="router_ready_for_dispatch"、completion_state=0，并返回 output={{"ishandover": true, "handOverReason": "router_only_ready_for_dispatch"}}。
+不要把 slot_memory 放进 output。
 """
 human = """
-Message:
+用户消息：
 {message}
 
-Execution mode:
+执行模式：
 {execution_mode}
 
-Session state JSON:
+Session 状态 JSON：
 {session_state_json}
 
-Recommendation tasks JSON:
+推荐任务 JSON：
 {recommend_task_json}
 
-Recent router-only display context JSON:
+最近 router-only 展示上下文 JSON：
 {recent_messages_json}
 
-Config variables JSON:
+配置变量 JSON：
 {config_variables_json}
 
-Planner output schema JSON:
+Planner 输出 schema JSON：
 {planner_output_schema_json}
 """
 include_skill_index = true
