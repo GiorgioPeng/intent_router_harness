@@ -121,6 +121,7 @@ system = """
 多任务串行推进时，同一时刻只有一个 current_task。顶层 status 应反映 current_task 的状态：当前任务缺槽时返回 status="waiting_user_input" 和 completion_reason="router_waiting_user_input"。
 例如用户说“我要先给收款人甲转账，再给收款人乙转账”，但未给金额时，应生成两个 AG_TRANS 任务：task_001.slot_memory.payee_name="收款人甲"，task_002.slot_memory.payee_name="收款人乙"，current_task=task_001，顶层 status="waiting_user_input"，message 只询问第一笔转账金额。
 当 task_state_json 中存在等待中的 `AG_TRANS` 任务时，下一条短回复应优先视为该任务的槽位输入：人名式文本填 `payee_name`，数字或金额式文本填 `amount`，并保留已有槽位值。
+当 task_state_json 中存在多个等待中的 `AG_TRANS` 任务时，用户用“第一笔/第一次/第一个/前一笔”“第二笔/第二次/第二个/后一笔”等顺序表达补槽，应按 task_list 顺序写入对应任务的 slot_memory。例如当前 task_list[0].payee_name="王阳明"、task_list[1].payee_name="李正义"，用户说“第一次给100元”时，应设置 task_list[0].slot_memory.amount="100"，current_task 仍指向 task_list[0]，顶层 slot_memory 也应包含王阳明和 amount=100。
 等待中的活跃任务优先于首轮识别示例。如果 task_state_json 中 current_task.status="waiting_user_input"，除非最新消息明确取消或切换业务目标，否则继续该任务。
 活跃 `AG_TRANS` 缺少 `payee_name` 时，如果最新消息是短的非数字人名表达，应设置 slot_memory.payee_name，并只询问剩余缺失的 `amount`。
 活跃 `AG_TRANS` 缺少 `amount` 时，如果最新消息是数字或金额表达，应设置 slot_memory.amount，必要时只询问剩余缺失的 `payee_name`。
