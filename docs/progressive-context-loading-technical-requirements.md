@@ -1,236 +1,410 @@
-# 可控分层加载技术需求文档
+# 智能路由上下文加载需求文档
 
-## 背景
+版本：v0.1
 
-当前服务定位为“意图识别 + spec 驱动 + skill 执行约束”的 router 服务。主要入口是助手协议消息接口，支持 SSE 流式和非流式两种返回方式。服务已经具备基本的 spec 渲染、skill 元数据索引、skill 正文加载、session 内存保存和 debug trace 能力。
+## 一、功能需求
 
-新需求要求进一步控制上下文加载范围，避免所有业务知识一次性进入 LLM 上下文，同时让加载过程可以在 SSE trace 中被观察。分层加载需要与 DeepAgents 的 progressive disclosure 能力保持一致：默认上下文小，先用轻量 metadata 完成意图识别，命中后再加载技能正文，技能正文再显式引用更深层资料。
+### 1. 背景
 
-## 目标
+当前 router 服务负责助手协议入口中的意图识别、任务规划、槽位收集、上下文管理和任务交接。随着业务 intent skill 数量增加，如果一次性加载全部业务知识，会导致上下文过大、意图识别互相干扰、成本升高和调试困难。
 
-1. 建立稳定的三层及以上上下文加载模型。
-2. 默认加载根级 agent 指令，作为 router 服务的全局行为约束。
-3. 业务意图 skill 通过 name 和 description 进入意图索引集合，意图识别阶段先选出 intent_code 和对应 skill，命中后才加载正文。
-4. 第三层及后续资料不进入全局可发现集合，只能由上层 skill 显式声明并按需加载。
-5. 任务完成、取消或失败后释放已加载 skill/reference 上下文，只保留必要的业务 session 状态。
-6. SSE 中可以看到意图识别、spec 渐进式加载、skill 正文加载、reference 加载和释放事件。
-7. 不通过兜底、正则或模糊匹配破坏框架设计。
+因此，需要建设一套可控分层上下文加载机制，使系统在大量 skill 场景下仍能保持小上下文、可追踪、可释放和可扩展。
 
-## 非目标
+### 2. 核心目标
 
-1. 不把 skill 内部的提槽逻辑搬到 router 服务代码中。
-2. 不在 router 服务里硬编码业务意图、槽位或业务文案。
-3. 不把所有 Markdown 文件一次性拼进 system prompt。
-4. 不依赖正则匹配来识别业务场景或补救 LLM 输出。
-5. 不要求必须使用 LangGraph 作为 runtime；是否使用 graph 取决于任务编排需求。
-6. 不在 session 中保存大段 Markdown 正文。
+1. 支持 100 个以上业务 intent skill。
+2. 首轮请求仅通过 skill metadata 完成意图识别。
+3. 命中意图后才加载对应 skill body。
+4. 支持单轮单意图与单轮多意图。
+5. 支持多任务并存，每个任务有独立上下文 lease。
+6. 支持多轮补槽、任务切换、任务澄清。
+7. 支持 reference 按需授权加载。
+8. 支持任务结束后释放上下文引用。
+9. 支持 SSE debug trace 观察加载、规划、释放全过程。
+10. 保证流式和非流式最终业务语义一致。
 
-## 术语
+### 3. 业务边界
 
-Layer 1：根级 agent 指令。每次请求默认加载，承载服务身份、协议边界、输出纪律和全局安全约束。
+1. router 不硬编码具体业务意图、槽位规则和业务文案。
+2. 不依赖正则、关键词兜底或模糊匹配修补 LLM 判断。
+3. 不把所有 Markdown 业务知识一次性放入 prompt。
+4. session 不保存 skill body、reference body 或完整 prompt。
+5. 多任务之间不得共享未授权 skill/reference 正文。
+6. 流式和非流式返回的最终业务语义必须一致。
 
-Layer 2：业务意图 skill，也可以理解为意图索引卡片。它具备稳定 name 和面向意图识别的 description，用于在大量候选 skill 中识别用户意图，并给出 intent_code 与对应 skill。命中后加载 skill 正文。
+### 4. 单意图处理
 
-Layer 3 及后续：reference 或更深层资料。它们不具备全局发现价值，不暴露有业务含义的 name/description，不进入全局 skill index。只能由上层 skill 显式声明允许引用，并在需要时加载。
+用户输入“我要转账”时：
 
-Context lease：一次会话中与当前活跃任务绑定的轻量上下文引用记录。它只保存 skill 名称、reference 标识、所属任务和状态，不保存 Markdown 正文。
+1. 系统加载 `agent.md`。
+2. 系统生成 skill metadata 索引。
+3. LLM 基于 metadata 识别 `intent_code` 和 `skill_name`。
+4. 系统校验识别结果是否合法。
+5. 系统加载命中的 skill body。
+6. planner 基于 skill body 判断缺失槽位。
+7. 系统返回补槽问题。
+8. 后续用户输入基于 context lease 继续当前任务。
+9. 任务完成后释放 lease。
 
-## 分层加载规则
+### 5. 多意图处理
 
-### 第一层：agent.md 默认加载
+用户输入“转账 200 给小明，再查余额”时：
 
-agent.md 是服务级根指令。每次渲染 prompt 时默认加载。
+1. 意图识别阶段允许返回多个 intent。
+2. 每个 intent 必须包含 `intent_code`、`skill_name`、`source_text`。
+3. 系统校验每个 intent 与 skill 的合法性。
+4. 系统为每个 intent 创建独立 task。
+5. 每个 task 绑定独立 context lease。
+6. 每个 task 只加载自身 skill body 和授权 reference。
+7. planner 根据用户表达顺序、业务优先级或 skill 规则决定执行顺序。
+8. 已满足条件的 task 可进入 `ready_for_dispatch`。
+9. 缺槽 task 进入 `waiting_for_user`。
+10. 单个 task 结束后，只释放该 task 的 lease。
 
-agent.md 应描述：
+### 6. 多轮补槽与澄清
 
-1. 服务职责：意图识别、spec 驱动、skill 约束、助手协议输出。
-2. 加载纪律：默认小上下文、命中后加载、引用按需加载。
-3. 输出纪律：只输出目标 schema 允许字段，不复制 schema 辅助说明。
-4. session 纪律：等待用户输入时继承当前任务和已收集槽位。
-5. 模式纪律：根据 stream 布尔值支持流式和非流式，但业务语义一致。
+当 session 中存在 active task 时：
 
-agent.md 不应包含具体业务意图、槽位定义和业务场景规则。
+1. 如果用户输入能明确归属某个 task，则更新该 task 的 slot memory。
+2. 如果用户输入可能属于多个 task，则返回澄清问题。
+3. 如果用户明确表达新意图，则创建新 task 或切换 current task。
+4. 如果用户取消某个任务，则释放该任务 lease。
+5. 如果用户取消全部任务，则释放所有 lease。
+6. 不允许随机把补槽内容绑定到某个任务。
+7. 已完成任务不再接收补槽，除非用户明确要求修改或重新办理。
 
-### 第二层：业务意图 skill 渐进式加载
+### 7. Reference 按需加载
 
-业务意图 skill 是 router 可发现的意图单元。Layer 2 的核心职责是意图识别，不承担提槽。
+reference 是 skill 私有资料，用于承载长规则、复杂流程、大量槽位定义和低频案例。
 
-业务意图 skill 必须具备：
+功能要求：
 
-1. 稳定 name。
-2. 面向意图识别的 description。
-3. 适用 surface、domain 或 capability 约束。
-4. 可以被意图识别阶段返回的稳定 intent_code。
-5. 正文中的业务边界、槽位、任务和 handover 规则。
+1. reference 不进入全局 skill index。
+2. 只有已加载 skill 显式声明的 reference 才能被请求。
+3. planner 可以请求加载 reference。
+4. 系统必须校验 reference 授权和路径安全。
+5. 未授权 reference 请求应返回错误或 trace 事件。
+6. reference 加载后只作用于当前 task。
 
-业务意图 skill 的加载过程分两步：
+### 8. 上下文释放
 
-1. Metadata 阶段：只把 name、description 和必要的 intent_code 映射暴露给 LLM，让 LLM 在候选 skill 中完成意图识别。
-2. Body 阶段：只有被意图识别选中的 skill，才加载 SKILL.md 正文。
+上下文释放规则：
 
-业务意图 skill 的 description 是可发现入口。它应描述用户会怎样表达这个意图、这个意图与相邻意图的边界，以及何时不应该命中。description 不负责提槽，不承载长业务规则，不允许依赖业务代码里的兜底关键词匹配来补救。
+1. task completed/cancelled/failed 后释放该 task 关联 lease。
+2. 多任务场景下，不释放其他 active task lease。
+3. session 无 active task 时，lease 必须为空。
+4. session 不保存 Markdown 正文，只保存引用标识。
+5. 后续补槽时可根据 lease 重新加载 skill/reference body。
 
-目标粒度优先采用一个 Layer 2 skill 对应一个可派发业务意图。如果一个 skill 临时承载多个 intent_code，则必须在 metadata 阶段暴露可区分的意图条目，使识别结果仍然明确包含 intent_code 和 skill_name。长期设计上，应避免让一个大 skill 承担过多意图，否则会降低 100 个以上 skill 场景下的识别精度和上下文效率。
+### 9. 可观测性
 
-### 第三层及后续：reference 显式加载
+debug trace 开启时，SSE 应展示：
 
-reference 是 skill 私有资料，不进入全局可发现集合。
+1. 请求进入。
+2. session 读取。
+3. `agent.md` 加载。
+4. skill metadata 索引生成。
+5. 单意图或多意图识别结果。
+6. task 创建或更新。
+7. skill body 加载。
+8. reference 可用列表。
+9. reference body 加载或拒绝。
+10. prompt 构建。
+11. LLM 原始输出。
+12. planner 分析结果。
+13. 助手协议帧生成。
+14. context lease 释放。
 
-reference 必须满足：
+非 debug 模式下，SSE 只输出业务 message 和 done。
 
-1. 位于所属 skill 的受控目录内。
-2. 由上层 skill 显式声明为可引用资料。
-3. 通过稳定标识引用，不通过业务含义名称做全局检索。
-4. 只在当前 planner 明确需要时加载正文。
+## 二、技术需求
 
-reference 适合承载：
+### 1. 分层上下文模型
 
-1. 长业务规则。
-2. 大量槽位定义。
-3. 复杂流程说明。
-4. 少量场景才会用到的示例。
-5. 后续更深层资料的引用说明。
+系统至少支持三层上下文。
 
-reference 不适合承载全局行为约束。全局约束应放在 agent.md。
+#### Layer 1：Agent Context
 
-## 加载生命周期
+来源：`agent.md`。
 
-一次消息请求的目标生命周期如下：
+加载规则：
 
-1. 读取 session 轻量状态。
-2. 加载 agent.md。
-3. 根据当前 surface、domain、capability 和已有 session 上下文生成 Layer 2 意图索引。
-4. 基于 Layer 2 的 name、description 和 intent_code 映射完成意图识别，输出本轮选中的 intent_code 和 skill。
-5. 加载被选中业务 skill 正文。
-6. 展示该 skill 显式允许的 reference 列表。
-7. 如 planner 判断当前任务需要更深层资料，则请求加载指定 reference。
-8. harness 校验 reference 是否属于已加载 skill 的允许集合。
-9. 加载 reference 正文后重新规划或继续规划。
-10. 输出助手协议帧。
-11. 保存 session 中必要业务状态和轻量 context lease。
-12. 当任务 completed、cancelled 或 failed 时释放 context lease。
+1. 每次请求默认加载。
+2. 包含 router 全局行为约束、协议边界、输出纪律和 session 纪律。
+3. 不包含具体业务 intent、槽位和业务规则。
 
-## 意图识别旅程示例
+#### Layer 2：Skill Metadata
 
-以下旅程用于说明 100 个 skill 场景下的目标行为。
+来源：各业务 skill 的 frontmatter 或结构化配置。
 
-假设系统中有 100 个 Layer 2 业务意图 skill，包括转账、查余额、还款、缴费、外汇、理财购买、信用卡账单查询等。每个 skill 都提供稳定 name、intent_code 和面向意图识别的 description。此时服务不会把 100 个 SKILL.md 正文全部加载给 LLM。
+加载规则：
 
-用户输入“我要转账”时，处理旅程如下：
+1. 进入全局可发现集合。
+2. 用于单意图或多意图识别。
+3. 不加载 skill body。
+4. 支持 100 个以上 skill metadata。
 
-1. 服务读取 session。如果这是新会话，session 中没有 active_context。
-2. 服务加载 Layer 1 agent.md。agent.md 只提供 router 的全局行为纪律，不包含具体业务意图和槽位规则。
-3. 服务生成 Layer 2 意图索引。此时 LLM 只看到 100 个候选 skill 的 name、description 和 intent_code 映射，不看到 skill 正文，也不看到 reference 正文。
-4. LLM 基于 name 和 description 做意图识别。它判断“我要转账”命中转账意图，输出 intent_code 为转账对应的业务意图码，并输出对应 skill_name。
-5. harness 校验 skill_name 必须来自当前 Available Skills，intent_code 必须来自该 skill 的 metadata 映射。不允许模型 invent 一个不存在的 skill 或泛化意图名。
-6. 服务加载被选中 skill 的正文。此时 skill body 才进入 prompt，用于约束 canonical intent、槽位边界、等待用户输入规则、任务状态和 handover 行为。
-7. planner 根据已加载 skill body 判断转账必填槽位缺失，输出等待用户输入，并询问收款人和金额。
-8. session 保存业务状态和轻量 context lease。lease 只记录当前任务关联的 skill_name、intent_code、reference 标识等，不保存 Markdown 正文。
-9. 用户继续输入“小明”。服务发现 session 中有活跃等待任务，直接基于 context lease 重新加载对应 skill body，不再重新在 100 个 skill 中做首轮意图识别。
-10. planner 在 skill 规则约束下把“小明”作为当前转账任务的收款人槽位，只追问金额。
-11. 用户输入“200”。planner 补齐金额，输出 ready_for_dispatch 和 handover 信息。
-12. 任务完成回调进入服务后，服务释放该任务的 context lease。后续新请求重新从 Layer 2 意图索引开始。
+建议字段：
 
-这个旅程中，name 和 description 的作用就是意图识别：从大量候选 skill 中选出 intent_code 和对应 skill。提槽发生在 skill body 加载之后，由 skill 正文及其按需 reference 约束完成。
+```json
+{
+  "name": "transfer-routing",
+  "description": "识别用户转账、汇款、给他人付款等诉求",
+  "intent_code": "AG_TRANSFER",
+  "surfaces": ["intent_recognition"],
+  "domain_codes": ["finance"],
+  "capabilities": ["routing"]
+}
+```
 
-## Session 与上下文释放
+#### Layer 3+：Reference
 
-session 只保存业务运行状态，不保存 Markdown 正文。
+来源：skill 目录下的受控文件。
 
-允许保存：
+加载规则：
 
-1. session_id。
-2. 当前状态和 completion_reason。
-3. slot_memory。
-4. task_list。
-5. current_task。
-6. graph。
-7. 当前任务绑定的轻量 context lease。
+1. 不进入全局可发现集合。
+2. 只能由所属 skill 显式声明。
+3. 只能被当前 task 按需加载。
+4. 需要校验数量、深度、路径和授权。
 
-不允许保存：
+### 2. Skill 与 Intent 建模
 
-1. agent.md 正文。
-2. SKILL.md 正文。
+推荐模型：
+
+1. 一个 Layer 2 skill 对应一个可派发业务 intent。
+2. `description` 负责意图识别边界。
+3. skill body 负责业务边界、槽位规则、任务状态和 handoff 规则。
+4. reference 负责长规则和低频细节。
+
+兼容模型：
+
+1. 一个 skill 可临时承载多个 intent。
+2. metadata 必须暴露可区分的 intent 条目。
+3. 意图识别结果必须明确返回 `intent_code` 和 `skill_name`。
+
+多 intent metadata 示例：
+
+```json
+{
+  "skill_name": "finance-routing",
+  "intents": [
+    {
+      "intent_code": "AG_TRANSFER",
+      "description": "用户表达转账、汇款、给他人付款"
+    },
+    {
+      "intent_code": "AG_BALANCE_QUERY",
+      "description": "用户表达查询账户余额"
+    }
+  ]
+}
+```
+
+### 3. 意图识别输出 Schema
+
+单意图和多意图统一使用数组：
+
+```json
+{
+  "recognized_intents": [
+    {
+      "intent_code": "AG_TRANSFER",
+      "skill_name": "transfer-routing",
+      "source_text": "转账 200 给小明",
+      "confidence": "high"
+    }
+  ]
+}
+```
+
+校验规则：
+
+1. `recognized_intents` 可以为空、一个或多个。
+2. `skill_name` 必须来自当前 metadata index。
+3. `intent_code` 必须属于对应 skill。
+4. `source_text` 必须来自用户输入或可解释的上下文。
+5. 低置信度、冲突意图、无法归属补槽应进入澄清流程。
+6. 不允许模型 invent skill 或 intent。
+
+### 4. Task 状态模型
+
+每个识别出的 intent 应对应一个 task。
+
+建议 task 字段：
+
+```json
+{
+  "task_id": "task_transfer_001",
+  "intent_code": "AG_TRANSFER",
+  "skill_name": "transfer-routing",
+  "status": "waiting_for_user",
+  "slot_memory": {
+    "payee_name": "小明",
+    "amount": null
+  },
+  "source_text": "转账给小明",
+  "created_at": "2026-05-07T10:00:00Z",
+  "updated_at": "2026-05-07T10:01:00Z"
+}
+```
+
+状态建议：
+
+1. `recognized`
+2. `planning`
+3. `waiting_for_user`
+4. `ready_for_dispatch`
+5. `dispatched`
+6. `completed`
+7. `cancelled`
+8. `failed`
+9. `clarification_required`
+
+### 5. Context Lease 模型
+
+session 支持多个 lease。
+
+建议字段：
+
+```json
+{
+  "lease_id": "lease_transfer_001",
+  "task_id": "task_transfer_001",
+  "skill_name": "transfer-routing",
+  "intent_code": "AG_TRANSFER",
+  "reference_ids": ["transfer_limits"],
+  "status": "active",
+  "created_at": "2026-05-07T10:00:00Z",
+  "updated_at": "2026-05-07T10:01:00Z"
+}
+```
+
+规则：
+
+1. lease 只保存引用，不保存正文。
+2. 一个 active task 至少有一个 active lease。
+3. reference lease 必须归属于对应 skill。
+4. task 结束后释放对应 lease。
+5. session 无 active task 时 lease 为空。
+6. lease 可用于后续轮次重新加载 skill/reference body。
+
+### 6. Session 状态要求
+
+session 允许保存：
+
+1. `session_id`
+2. `slot_memory`
+3. `task_list`
+4. `current_task`
+5. `context_leases`
+6. `completion_reason`
+7. 轻量 graph 或 task 状态
+
+session 不允许保存：
+
+1. `agent.md` 正文。
+2. `SKILL.md` 正文。
 3. reference 正文。
-4. LLM 完整 prompt。
+4. 完整 LLM prompt。
 
-释放规则：
+### 7. 请求处理生命周期
 
-1. 单任务完成、取消或失败后，清理该任务关联的 skill/reference 引用。
-2. 多任务中，单个任务完成后只释放该任务独占引用，仍活跃任务的引用继续保留。
-3. 整个 session 无活跃任务时，context lease 必须为空。
-4. 下一轮用户输入仍处于等待槽位状态时，可以基于轻量 lease 重新加载同一 skill/reference 正文，但正文不从 session 中读取。
+目标流程：
 
-## SSE 与日志可观测性
+1. `request_received`
+2. `session_loaded`
+3. 加载 `agent.md`
+4. 判断是否存在 active task
+5. 如果输入归属 active task，基于 lease 重载上下文
+6. 如果是新任务或切换任务，生成 skill metadata index
+7. 执行单意图或多意图识别
+8. 校验 intent 结果
+9. 创建或更新 task
+10. 加载 task 对应 skill body
+11. 暴露允许 reference 列表
+12. planner 请求 reference
+13. 校验并加载 reference body
+14. planner 完成提槽、澄清或 handoff 判断
+15. 生成助手协议帧
+16. 保存 session 状态和 lease
+17. 释放已结束 task 的 lease
 
-开启 debug trace 后，SSE 应展示核心过程，而不是只依赖服务日志。
-
-必须可观察的阶段：
-
-1. request_received：请求进入服务。
-2. session_loaded：读取 session 状态。
-3. agent_context_loaded：加载 agent.md。
-4. spec_progressive_load：生成 Layer 2 意图索引和已加载 skill 列表。
-5. intent_metadata_selected：基于 name 和 description 选出 intent_code 与 skill。
-6. skill_body_loaded：加载命中的业务 skill 正文。
-7. references_available：展示当前已加载 skill 允许的 reference 标识。
-8. reference_body_loaded：加载指定 reference 正文。
-9. prompt_loaded：最终 prompt 已构建。
-10. llm_raw_response：LLM 原始返回。
-11. llm_analysis：结构化 planner 分析结果。
-12. intent_recognition：业务意图识别结果。
-13. slot_and_skill_result：skill 约束后的提槽或业务结果。
-14. context_released：任务结束后的上下文释放。
-15. assistant_protocol_frames：助手协议帧生成。
-
-日志中应保留同等阶段的结构化摘要，避免打印大段无用 JSON。大字段只在 debug trace 明确需要时进入 SSE。
-
-## 深层 reference 请求规则
+### 8. Reference 加载规则
 
 planner 可以请求加载 reference，但必须满足：
 
-1. 请求的 reference 标识已经由当前已加载 skill 显式暴露。
-2. 请求数量不超过服务配置上限。
-3. 加载深度不超过服务配置上限。
-4. reference 路径必须位于所属 skill 目录内。
-5. 不允许路径穿越。
-6. 未授权 reference 请求应作为 planner 错误或 trace 事件暴露，不做静默兜底。
+1. reference 已由当前 task 对应 skill 显式声明。
+2. reference 路径位于所属 skill 目录内。
+3. 不允许路径穿越。
+4. 请求数量不超过配置上限。
+5. 加载深度不超过配置上限。
+6. 加载轮数不超过配置上限。
+7. 未授权 reference 请求应作为错误或 trace 事件暴露。
 
-为了控制成本，一次消息请求中的 reference 加载轮数应有限。超过轮数后，planner 必须在现有上下文内给出可验证输出，或返回失败状态。
+### 9. SSE Trace 事件
 
-## 与 DeepAgents 能力的关系
+debug 模式建议事件：
 
-DeepAgents 的核心能力包括 instruction、skills、filesystem、subagents、summarization 和 LangGraph 编译 runtime。当前服务不需要为了支持分层加载而强制改成 graph runtime。
+1. `request_received`
+2. `session_loaded`
+3. `agent_context_loaded`
+4. `spec_progressive_load`
+5. `intent_metadata_selected`
+6. `multi_intent_detected`
+7. `task_created`
+8. `task_updated`
+9. `skill_body_loaded`
+10. `references_available`
+11. `reference_body_loaded`
+12. `reference_load_denied`
+13. `prompt_loaded`
+14. `llm_raw_response`
+15. `llm_analysis`
+16. `slot_and_skill_result`
+17. `assistant_protocol_frames`
+18. `context_released`
 
-本服务应吸收 DeepAgents 的 progressive disclosure 思路：
+### 10. 安全与限制
 
-1. 根指令常驻。
-2. skill metadata 轻量常驻。
-3. skill 正文按需加载。
-4. reference 资源由 skill 显式引用后按需读取。
-5. 长上下文通过释放和重新加载控制，而不是把全部历史永久塞进 session。
+1. 文件加载必须受 spec root 和 skill root 限制。
+2. 禁止路径穿越。
+3. 禁止根据用户输入拼接文件路径。
+4. 禁止正则兜底业务意图识别。
+5. 禁止在目标 schema 外追加字段。
+6. 限制 skill body 最大长度。
+7. 限制单次请求 reference 数量。
+8. 限制 reference 加载深度。
+9. 限制 reference 加载轮数。
+10. 生产环境默认关闭 prompt/body trace 或增加权限控制。
 
-如果后续需要多步骤工具调用、跨 agent 协作、复杂任务图和自动摘要，再评估是否引入 DeepAgents 或 LangGraph runtime。当前阶段的 router 服务可以先保持独立 runtime，但接口和数据结构要为后续兼容留出边界。
+### 11. 验收标准
 
-## 安全与边界
+必须覆盖：
 
-1. 所有文件加载必须受 spec 和 skill 根目录约束。
-2. reference 只能从所属 skill 的允许列表中读取。
-3. 不能根据用户文本直接拼接文件路径。
-4. 不能用正则兜底业务识别。
-5. 不能在 LLM 输出 schema 外追加协议字段。
-6. SSE debug trace 可以暴露 prompt 和上下文正文；生产环境应默认关闭或做权限控制。
-7. 上下文长度必须有上限，包括 skill 正文、reference 正文、总 reference 数和加载轮数。
+1. 服务启动后可加载 `agent.md`、spec、skill library。
+2. 100 个 skill 场景下只加载 metadata。
+3. 单意图请求能识别 intent 并加载命中 skill body。
+4. 多意图请求能创建多个 task。
+5. 每个 task 有独立 context lease。
+6. 多任务补槽能正确归属 task。
+7. 歧义补槽会触发澄清。
+8. 未授权 reference 不能加载。
+9. task 完成后释放对应 lease。
+10. session 无 active task 时 lease 为空。
+11. 流式和非流式最终业务语义一致。
+12. debug trace 能看到加载、规划、释放阶段。
+13. session 不保存 Markdown 正文或完整 prompt。
 
-## 验收标准
+## 三、框架选型说明
 
-1. 服务启动后可以加载 spec、agent.md 和 skill library。
-2. 无 debugTrace 时，SSE 只输出业务 message 和 done。
-3. 有 debugTrace 时，SSE 能看到 agent、spec、skill、reference 和 LLM 分析阶段。
-4. “我要转账”类请求应先通过 Layer 2 metadata 识别出转账 intent_code 和对应 skill，再加载 skill body，并在缺槽时等待用户输入。
-5. 同一 session 的后续槽位输入能继承前序 slot_memory。
-6. 任务完成后，session 中不再保留已加载 skill/reference lease。
-7. 非流式接口返回最终业务帧，语义与流式最终业务帧一致。
-8. reference 未被上层 skill 声明时不能加载。
-9. 100 个 Layer 2 skill 的场景下，意图识别阶段只加载 metadata，不加载未命中 skill body。
-10. 测试用例覆盖 agent.md 加载、metadata 意图识别、skill 正文加载、reference 授权加载、context lease 保存和释放。
+当前阶段框架选型不是重点。本阶段建议继续基于当前独立 runtime 完成功能闭环，同时在数据结构上保留后续兼容 DeepAgents progressive disclosure 或 LangGraph runtime 的边界。
+
+当前优先级：
+
+1. 分层上下文加载。
+2. 单意图与多意图识别。
+3. task 与 lease 状态管理。
+4. reference 授权加载。
+5. SSE trace 可观测。
+6. 测试与验收标准。
