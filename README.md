@@ -57,6 +57,9 @@ harness references, implementation model, and next steps.
 See [docs/ASSISTANT_PROTOCOL_REGRESSION.md](docs/ASSISTANT_PROTOCOL_REGRESSION.md)
 for the `router-service-助手协议回归测试用例-v0.5` implementation.
 
+See [docs/router-service-助手协议回归测试用例-v0.6.md](docs/router-service-助手协议回归测试用例-v0.6.md)
+for the current project-aligned regression case plan.
+
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for ASGI deployment instructions.
 
 ## Commands
