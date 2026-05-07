@@ -15,7 +15,7 @@ from typing import Any, Iterator
 
 
 DEFAULT_BASE_URL = os.getenv("INTENT_ROUTER_BASE_URL", "http://ai.intent-router.cc")
-DEFAULT_CUST_ID = "C0001"
+DEFAULT_CUST_NO = "C0001"
 DEFAULT_CURRENT_DISPLAY = "transfer_page"
 DEFAULT_TIMEOUT_SECONDS = 180
 DEFAULT_SESSION_ID_PREFIX = "mock_assistant"
@@ -42,7 +42,7 @@ def build_assistant_to_router_payload(
     session_id: str,
     txt: str,
     current_display: str = DEFAULT_CURRENT_DISPLAY,
-    cust_id: str = DEFAULT_CUST_ID,
+    cust_no: str = DEFAULT_CUST_NO,
     execution_mode: str = "router_only",
     agent_session_id: str | None = None,
     stream: bool = True,
@@ -51,7 +51,7 @@ def build_assistant_to_router_payload(
 ) -> dict[str, Any]:
     """Build the same payload shape assistant-service forwards to router."""
     config_variables: list[dict[str, Any]] = [
-        {"name": "custID", "value": cust_id},
+        {"name": "cust_no", "value": cust_no},
         {"name": "sessionID", "value": session_id},
         {"name": "currentDisplay", "value": current_display},
         {"name": "agentSessionID", "value": agent_session_id or session_id},
@@ -69,7 +69,6 @@ def build_assistant_to_router_payload(
         "txt": txt,
         "config_variables": config_variables,
         "executionMode": execution_mode,
-        "custId": cust_id,
         "stream": stream,
         "debugTrace": debug_trace,
     }
@@ -193,7 +192,7 @@ def run_one_turn(
     txt: str,
     current_display: str = DEFAULT_CURRENT_DISPLAY,
     base_url: str = DEFAULT_BASE_URL,
-    cust_id: str = DEFAULT_CUST_ID,
+    cust_no: str = DEFAULT_CUST_NO,
     execution_mode: str = "router_only",
     agent_session_id: str | None = None,
     stream: bool = True,
@@ -211,7 +210,7 @@ def run_one_turn(
         session_id=resolved_session_id,
         txt=txt,
         current_display=current_display,
-        cust_id=cust_id,
+        cust_no=cust_no,
         execution_mode=execution_mode,
         agent_session_id=agent_session_id,
         stream=stream,
@@ -293,7 +292,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_CURRENT_DISPLAY,
         help=f"Assistant currentDisplay. Default: {DEFAULT_CURRENT_DISPLAY}",
     )
-    parser.add_argument("--cust-id", default=DEFAULT_CUST_ID, help=f"custId. Default: {DEFAULT_CUST_ID}")
+    parser.add_argument("--cust-no", default=DEFAULT_CUST_NO, help=f"cust_no. Default: {DEFAULT_CUST_NO}")
     parser.add_argument(
         "--execution-mode",
         default="router_only",
@@ -332,7 +331,7 @@ def main() -> int:
         txt=args.txt,
         current_display=args.current_display,
         base_url=args.base_url,
-        cust_id=args.cust_id,
+        cust_no=args.cust_no,
         execution_mode=args.execution_mode,
         agent_session_id=args.agent_session_id,
         stream=args.stream,
@@ -370,7 +369,6 @@ def _compact_request_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "executionMode": payload.get("executionMode"),
         "stream": payload.get("stream"),
         "debugTrace": payload.get("debugTrace"),
-        "custId": payload.get("custId"),
     }
     if config:
         compact["config"] = config
@@ -397,7 +395,7 @@ def _compact_trace_payload(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
     if stage == "request_received":
-        compact["data"] = _pick(data, ["session_id", "execution_mode", "text", "cust_id"])
+        compact["data"] = _pick(data, ["session_id", "execution_mode", "text", "user_binding_id"])
     elif stage == "session_loaded":
         compact["data"] = _drop_empty(
             {
