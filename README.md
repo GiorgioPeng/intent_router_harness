@@ -9,9 +9,13 @@ project owns its own specs, skills, prompt surfaces, and tests.
 ## Core Model
 
 - A spec file defines named prompt surfaces.
+- `agent.md` is the default root instruction layer.
 - Skill metadata is indexed first.
-- Full `SKILL.md` bodies are loaded only when a binding matches the current
-  surface and runtime context.
+- Full business `SKILL.md` bodies are loaded only after scene selection or an
+  explicit runtime request.
+- Lower-level helper skills without `description` stay out of the recognition
+  index and can still be loaded explicitly.
+- Long or low-frequency rules should be exposed as skill-owned references.
 - Rendered prompts are plain data, so they can be used by any LLM client or
   eval runner.
 
@@ -22,14 +26,16 @@ from intent_router_harness import load_prompt_harness
 
 harness = load_prompt_harness("examples/finance-router-harness.toml")
 prompt = harness.render(
-    surface="intent_recognition",
+    surface="scene_selection",
     variables={
         "message": "transfer 500 to Alice",
-        "candidate_intents_json": "[]",
         "recommend_task_json": "[]",
+        "task_state_json": "{}",
+        "recent_messages_json": "[]",
+        "config_variables_json": "[]",
     },
     domain_codes=("finance",),
-    intent_codes=("transfer",),
+    capabilities=("routing", "slots", "planning"),
 )
 
 print(prompt.messages())
@@ -68,40 +74,27 @@ After installing the package, the same commands are available through
 
 ## HTTP Service
 
-The service layer exposes the same harness runtime over a small stdlib HTTP
-server:
+The service layer exposes the assistant protocol over HTTP:
 
-- `GET /health`: harness name, version, and configured surfaces.
-- `GET /surfaces`: surface metadata without prompt bodies.
-- `POST /render`: render a prompt surface. Set `stream: true` for SSE, or
-  `stream: false` for a regular JSON response.
-- `POST /llm/render`: render a prompt surface and call the configured
-  OpenAI-compatible LLM. It also supports `stream: true`.
+- `GET /healthz`: liveness check.
+- `GET /readyz`: readiness check and LLM configuration visibility.
 - `POST /api/v1/message`: spec-driven assistant protocol message entrypoint.
 - `POST /api/v1/task/completion`: assistant task completion callback.
-- `GET /regression/suite`: assistant protocol regression suite summary.
-- `GET /regression/cases/{case_id}`: one structured regression case.
-- `POST /regression/validate`: validate an SSE transcript against one step or case.
 
 SSE request:
 
 ```bash
-curl -s http://127.0.0.1:8765/render \
+curl -s http://127.0.0.1:8765/api/v1/message \
   -H 'Content-Type: application/json' \
   -d '{
-    "surface": "intent_recognition",
+    "sessionId": "assistant_demo_001",
+    "txt": "给小明转账200元",
     "stream": true,
-    "variables": {
-      "message": "transfer 500 to Alice",
-      "candidate_intents_json": "[]",
-      "recommend_task_json": "[]"
-    },
-    "domain_codes": ["finance"],
-    "intent_codes": ["transfer"]
+    "executionMode": "router_only"
   }'
 ```
 
-The SSE response uses `event: message` for the rendered prompt payload and ends
+The SSE response uses `event: message` for business frames and ends
 with:
 
 ```text
@@ -110,26 +103,6 @@ data: [DONE]
 ```
 
 For non-streaming JSON, send `"stream": false` or omit the field.
-
-LLM-backed service request:
-
-```bash
-curl -s http://127.0.0.1:8765/llm/render \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "surface": "intent_recognition",
-    "stream": false,
-    "max_tokens": 512,
-    "variables": {
-      "message": "给小明转账200元",
-      "candidate_intents_json": "[]",
-      "recommend_task_json": "[]",
-      "recent_messages_json": "[]"
-    },
-    "domain_codes": ["finance"],
-    "capabilities": ["routing"]
-  }'
-```
 
 Assistant protocol service request:
 
@@ -140,9 +113,6 @@ curl -s http://127.0.0.1:8765/api/v1/message \
     "sessionId": "assistant_demo_001",
     "txt": "给小明转账200元",
     "stream": true,
-    "executionMode": "router_only",
-    "candidate_intents": [
-      {"intent_code": "AG_TRANS", "name": "转账", "required_slots": ["payee_name", "amount"]}
-    ]
+    "executionMode": "router_only"
   }'
 ```

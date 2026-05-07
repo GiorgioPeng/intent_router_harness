@@ -122,6 +122,7 @@ class LLMMessagePlanner:
             trace_events=trace_events,
         )
         payload, plan = _parse_plan_payload(request, content)
+        _validate_plan_intents(request, plan, prompt, self.harness)
 
         if plan.requested_references:
             requested_reference_ids = tuple(
@@ -166,6 +167,7 @@ class LLMMessagePlanner:
                 trace_events=trace_events,
             )
             payload, plan = _parse_plan_payload(request, content)
+            _validate_plan_intents(request, plan, prompt, self.harness)
 
         logger.info(
             "llm.plan.validated session_id=%s mode=%s status=%s intent_code=%s completion_reason=%s slot_memory=%s task_count=%d output=%s",
@@ -197,6 +199,7 @@ class LLMMessagePlanner:
             "metadata_skills": list(prompt.metadata_skills),
             "skill_names": list(prompt.loaded_skills),
             "reference_ids": list(prompt.loaded_references),
+            **_skill_context_maps(prompt, self.harness),
         }
         if include_trace:
             event = AssistantTraceEvent(
@@ -349,6 +352,9 @@ def _planner_output_schema_json() -> str:
             "如果 router_only 模式下必填槽位齐全，使用 status=ready_for_dispatch 和 completion_reason=router_ready_for_dispatch。",
             "只能使用已加载 skill 中声明的标准 intent_code，不要编造展示名或泛化标签。",
             "当 task runtime state 中存在等待中的活跃任务时，将短回复优先解释为该任务的槽位值，并保留已有 slot_memory。",
+            "recommendTask 只作为当前轮 router 上下文；只有用户明确选择全部、部分或指定推荐任务时，才基于推荐任务创建 task。",
+            "如果用户未采纳推荐任务而表达其他诉求，不要把推荐任务写入 task_list。",
+            "如果用户没有对推荐任务做出选择，recommendTask 不得影响后续 task runtime state。",
             "如果已加载 skill 暴露了可用 reference 且确实需要更多上下文，将 requested_references 设置为允许的 reference id，status=running，completion_reason=router_reference_required。",
             "不要请求未在可用 Reference 摘要中列出的 reference id。",
         ],
@@ -514,7 +520,7 @@ def _record_prompt_trace(
         len(prompt.human),
     )
     logger.info(
-        "core.trace step=prompt_loaded session_id=%s surface=%s system_contains=surface_rules+agent_context+spec_context+loaded_skill_bodies+loaded_references human_contains=user_message+session_state+output_schema loaded_skills=%s loaded_references=%s system_chars=%d human_chars=%d",
+        "core.trace step=prompt_loaded session_id=%s surface=%s system_contains=surface_rules+agent_context+spec_context+loaded_skill_bodies+loaded_references human_contains=user_message+task_runtime_state+output_schema loaded_skills=%s loaded_references=%s system_chars=%d human_chars=%d",
         request.sessionId,
         prompt.surface,
         list(prompt.loaded_skills),
@@ -604,6 +610,72 @@ def _parse_plan_payload(
         return payload, PlannerOutput.model_validate(payload)
     except ValidationError as exc:
         raise PlannerError(f"LLM planner output failed schema validation: {exc}") from exc
+
+
+def _validate_plan_intents(
+    request: RouterMessageRequest,
+    plan: PlannerOutput,
+    prompt: Any,
+    harness: PromptHarness,
+) -> None:
+    allowed_intents = _allowed_intents_for_loaded_skills(prompt, harness)
+    if not allowed_intents:
+        return
+
+    emitted: list[tuple[str, str]] = []
+    if plan.intent_code:
+        emitted.append(("intent_code", plan.intent_code))
+    if plan.recognition is not None and plan.recognition.intent_code:
+        emitted.append(("recognition.intent_code", plan.recognition.intent_code))
+    for index, task in enumerate(plan.task_list):
+        emitted.append((f"task_list[{index}].intent_code", task.intent_code))
+    if plan.current_task is not None:
+        emitted.append(("current_task.intent_code", plan.current_task.intent_code))
+
+    invalid = [
+        {"field": field, "intent_code": intent_code}
+        for field, intent_code in emitted
+        if intent_code not in allowed_intents
+    ]
+    if invalid:
+        raise PlannerError(
+            "LLM planner emitted intent_code not declared by loaded skills: "
+            f"session_id={request.sessionId} invalid={invalid} allowed={sorted(allowed_intents)}"
+        )
+
+
+def _allowed_intents_for_loaded_skills(prompt: Any, harness: PromptHarness) -> set[str]:
+    allowed: set[str] = set()
+    for skill_name in getattr(prompt, "loaded_skills", ()):
+        skill = harness.skills.get(str(skill_name))
+        if skill is not None:
+            allowed.update(skill.intent_codes)
+    return allowed
+
+
+def _skill_context_maps(prompt: Any, harness: PromptHarness) -> dict[str, dict[str, list[str]]]:
+    skill_intent_map: dict[str, list[str]] = {}
+    intent_skill_map: dict[str, list[str]] = {}
+    reference_skill_map: dict[str, list[str]] = {}
+    loaded_references = set(getattr(prompt, "loaded_references", ()))
+    for skill_name in getattr(prompt, "loaded_skills", ()):
+        skill = harness.skills.get(str(skill_name))
+        if skill is None:
+            continue
+        skill_intent_map[skill.name] = list(skill.intent_codes)
+        for intent_code in skill.intent_codes:
+            intent_skill_map.setdefault(intent_code, []).append(skill.name)
+        for reference in skill.references:
+            if reference.id in loaded_references:
+                reference_skill_map.setdefault(reference.id, []).append(skill.name)
+            scoped_id = f"{skill.name}:{reference.id}"
+            if scoped_id in loaded_references:
+                reference_skill_map.setdefault(scoped_id, []).append(skill.name)
+    return {
+        "skill_intent_map": skill_intent_map,
+        "intent_skill_map": intent_skill_map,
+        "reference_skill_map": reference_skill_map,
+    }
 
 
 def _finish_reason(raw_response: dict) -> str | None:

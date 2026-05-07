@@ -2,7 +2,7 @@
 
 本文记录当前服务的实际边界：这是一个 **意图识别 + spec 驱动 + skill 渐进式加载 + LLM planner + SSE 协议输出** 的服务。
 
-当前没有 `primary/candidates` 输出，也没有 `candidate_intents` 输入。提槽规则放在 skill 中，服务层只负责会话状态保存、prompt 渲染、LLM 调用和协议适配。
+当前没有 `primary/candidates` 输出，也没有 `candidate_intents` 输入。提槽规则放在 skill 中，服务层只负责 session 生命周期、任务运行态保存、prompt 渲染、LLM 调用和协议适配。
 
 ## 总体架构
 
@@ -43,15 +43,16 @@ sequenceDiagram
     C->>A: POST /api/v1/message, stream=true
     A->>S: handle_message(request)
     S->>AP: handle_message(request)
-    AP->>SS: get_or_create(sessionId)
-    AP->>P: plan_message(request, session)
+    AP->>SS: load(sessionId)
+    SS-->>AP: SessionState + TaskRuntimeState
+    AP->>P: plan_message(request, task_runtime_state)
     P->>R: render(surface=task_planning)
     R->>SK: progressive skill loading
     R-->>P: rendered prompt + loaded skill names
     P->>L: chat(messages)
     L-->>P: PlannerOutput JSON
     P-->>AP: validated PlannerOutput
-    AP->>SS: save(updated session)
+    AP->>SS: save_task_state(updated task runtime)
     AP-->>S: protocol frames
     S-->>A: payload frames
     A-->>C: SSE message frames + done
@@ -122,8 +123,8 @@ flowchart TB
 | --- | --- | --- |
 | API | `asgi.py` | 暴露 `/api/v1/message`、`/api/v1/task/completion`、health、render、regression 接口；负责 SSE 输出。 |
 | 服务 | `service.py` | 服务总入口，连接 prompt harness、assistant protocol、LLM、regression。 |
-| 协议 | `assistant_service.py` | 读取 session，调用 planner，把 `PlannerOutput` 转为协议帧。 |
-| 会话 | `session_store.py` | 当前为进程内内存 session，按 `sessionId` 保存 `slot_memory/task_list/current_task`。 |
+| 协议 | `assistant_service.py` | 读取 session 生命周期和 task runtime，调用 planner，把 `PlannerOutput` 转为协议帧。 |
+| 会话 | `session_store.py` | 当前为进程内内存存储；session 只保存身份和 30 分钟空闲 TTL，任务状态在独立 `TaskRuntimeState` 中保存。 |
 | Planner | `planner.py` | 渲染 `task_planning` surface，调用 LLM，校验 LLM JSON。 |
 | Runtime | `runtime.py` | 根据 spec surface 和上下文渐进式加载 skill，生成 system/human prompt。 |
 | Skill | `skills/finance-routing/SKILL.md` | 金融领域规则，包含 `AG_TRANS` 的提槽规则和槽位边界。 |
@@ -137,14 +138,14 @@ flowchart TB
 - `AG_TRANS` 必填槽位：`payee_name`、`amount`
 - 短答 `"小明"` 这类文本填 `payee_name`
 - 数字或金额表达 `"200"`、`"200元"` 填 `amount`
-- 已有槽位从 `session_state_json` 继承并合并
+- 已有槽位从 `task_state_json` 中的当前任务运行态继承并合并
 - 槽缺失时返回 `waiting_user_input`
 - 槽齐且 `router_only` 时返回 `ready_for_dispatch`
 
 服务层不硬编码正则提槽逻辑，只保存 LLM 返回的 `slot_memory`：
 
 ```python
-slot_memory = dict(session.slot_memory)
+slot_memory = dict(current_task.slot_memory)
 slot_memory.update(plan.slot_memory)
 ```
 
@@ -179,4 +180,3 @@ llm.plan.raw_response session_id=... content=...
 llm.plan.parsed_json session_id=...
 llm.plan.validated session_id=... status=waiting_user_input intent_code=AG_TRANS
 ```
-

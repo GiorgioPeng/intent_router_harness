@@ -93,7 +93,8 @@ class SkillLibrary:
         return [
             skill
             for skill in self._skills.values()
-            if skill_matches(
+            if skill.description
+            and skill_matches(
                 skill,
                 surface=surface,
                 intent_codes=intent_codes,
@@ -108,7 +109,7 @@ def load_skill_document(path: Path) -> SkillDocument:
     content = path.read_text(encoding="utf-8")
     metadata, body = split_frontmatter(content)
     name = str(metadata.get("name") or path.parent.name).strip()
-    description = str(metadata.get("description") or f"Skill instructions for {name}").strip()
+    description = str(metadata.get("description") or "").strip()
     return SkillDocument(
         name=name,
         description=description,

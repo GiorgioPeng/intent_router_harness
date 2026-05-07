@@ -293,7 +293,7 @@
         <div class="step-body"><code>POST /api/v1/message</code>，默认 <code>stream=true</code>，通过 SSE 返回。</div>
 
         <div class="step-label">2. 读取上下文</div>
-        <div class="step-body"><code>session_store.py</code> 按 <code>sessionId</code> 读取内存态 <code>slot_memory/task_list/current_task</code>。</div>
+        <div class="step-body"><code>session_store.py</code> 按 <code>sessionId</code> 读取 session 生命周期和 <code>TaskRuntimeState</code>。</div>
 
         <div class="step-label">3. 渲染 surface</div>
         <div class="step-body"><code>planner.py</code> 调用 <code>PromptHarness.render(surface=task_planning)</code>。</div>
@@ -302,7 +302,7 @@
         <div class="step-body"><code>runtime.py</code> 根据 surface、domain、capabilities 匹配 <code>finance-routing/SKILL.md</code>。</div>
 
         <div class="step-label">5. LLM 分析</div>
-        <div class="step-body">LLM 根据 spec + skill + session state 输出 <code>PlannerOutput</code> JSON。</div>
+        <div class="step-body">LLM 根据 spec + skill + task runtime 输出 <code>PlannerOutput</code> JSON。</div>
 
         <div class="step-label">6. 协议适配</div>
         <div class="step-body"><code>assistant_service.py</code> 将 PlannerOutput 转为 <code>AssistantProtocolFrame</code>。</div>
@@ -331,9 +331,9 @@
 
         <div class="module-group">
           <h3>助手协议层</h3>
-          <div class="module"><code>assistant_service.py</code><p>会话读取、planner 调用、协议帧生成。</p></div>
+          <div class="module"><code>assistant_service.py</code><p>session 生命周期读取、task runtime 更新、planner 调用、协议帧生成。</p></div>
           <div class="module"><code>contracts.py</code><p>请求、任务、PlannerOutput、协议帧模型。</p></div>
-          <div class="module"><code>session_store.py</code><p>当前为内存 session。</p></div>
+          <div class="module"><code>session_store.py</code><p>内存 session 生命周期和独立 task runtime。</p></div>
         </div>
 
         <div class="module-group">
@@ -378,7 +378,7 @@
           </tr>
           <tr>
             <td><code>planner.py</code></td>
-            <td>把 session state、spec、skill 注入 prompt，并调用 LLM 做判断。</td>
+            <td>把 task runtime、spec、skill 注入 prompt，并调用 LLM 做判断。</td>
           </tr>
           <tr>
             <td><code>assistant_service.py</code></td>
