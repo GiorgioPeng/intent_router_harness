@@ -388,6 +388,7 @@ def test_final_task_completion_clears_active_runtime_memory(tmp_path: Path) -> N
     assert result.final_frame.status == "completed"
     assert saved.current_task is None
     assert saved.slot_memory == {}
+    assert saved.task_list == []
     assert saved.active_context == {}
     assert saved.context_leases == []
 
@@ -449,7 +450,9 @@ def test_assistant_service_saves_and_releases_context_lease(tmp_path: Path) -> N
         )
     )
 
-    assert service.assistant.sessions.get_task_state("lease_session").active_context == {}
+    saved_after_completion = service.assistant.sessions.get_task_state("lease_session")
+    assert saved_after_completion.task_list == []
+    assert saved_after_completion.active_context == {}
 
 
 def test_terminal_message_plan_clears_persisted_current_task_and_context(tmp_path: Path) -> None:
@@ -494,6 +497,7 @@ def test_terminal_message_plan_clears_persisted_current_task_and_context(tmp_pat
     assert result.final_frame.current_task is not None
     assert saved.current_task is None
     assert saved.slot_memory == {}
+    assert saved.task_list == []
     assert saved.active_context == {}
     assert saved.context_leases == []
 
@@ -549,7 +553,7 @@ def test_terminal_current_task_without_task_list_updates_runtime_state(tmp_path:
     assert saved.current_task is None
     assert saved.slot_memory == {}
     assert saved.active_context == {}
-    assert saved.task_list[0].status == "cancelled"
+    assert saved.task_list == []
 
 
 def test_task_completion_advances_to_next_waiting_task(tmp_path: Path) -> None:
@@ -620,6 +624,7 @@ def test_task_completion_advances_to_next_waiting_task(tmp_path: Path) -> None:
     assert saved.current_task is not None
     assert saved.current_task.taskId == "task_002"
     assert saved.slot_memory == {"payee_name": "李正义"}
+    assert [task.taskId for task in saved.task_list] == ["task_002"]
     assert saved.active_context["task_id"] == "task_002"
 
 
@@ -816,7 +821,7 @@ def test_session_expires_after_idle_timeout_and_clears_memory(tmp_path: Path) ->
     assert expired.task_state.context_leases == []
 
 
-def test_task_completion_rejects_terminal_task_replay(tmp_path: Path) -> None:
+def test_task_completion_rejects_replay_after_runtime_task_is_cleared(tmp_path: Path) -> None:
     task = PlannedTask(
         taskId="task_transfer",
         intent_code="AG_TRANS",
@@ -859,7 +864,7 @@ def test_task_completion_rejects_terminal_task_replay(tmp_path: Path) -> None:
 
     assert first.final_frame.status == "completed"
     assert second.final_frame.ok is False
-    assert second.final_frame.errorCode == "TASK_ALREADY_TERMINAL"
+    assert second.final_frame.errorCode == "TASK_NOT_FOUND"
 
 
 def test_llm_planner_rejects_intent_not_declared_by_loaded_skill(tmp_path: Path) -> None:

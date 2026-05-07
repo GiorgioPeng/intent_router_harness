@@ -18,5 +18,6 @@
 
 - session 中不保存 Markdown 正文。
 - task 活跃期间只保存轻量 context lease 标识。
-- task 进入 `completed`、`cancelled` 或 `failed` 后，必须释放 skill 和 reference lease。
+- task 进入 `completed`、`cancelled` 或 `failed` 后，必须释放 skill 和 reference lease，并从运行态 `task_list` 移除。
+- 一组任务全部结束后，运行态 `task_list`、`current_task`、`slot_memory` 和上下文 lease 都应为空。
 - 如果用户在同一 session 中继续一个等待中的任务，必须根据受控文件系统中的引用重新加载所需 skill 和 reference 内容。

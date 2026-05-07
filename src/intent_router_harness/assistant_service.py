@@ -497,8 +497,9 @@ class AssistantProtocolService:
                 )
             )
 
+        runtime_task_list = _active_task_list(task_list)
         current_task = next_task if request.completionSignal == 2 else completed_task
-        context_leases = _retained_context_leases(task_state.context_leases, task_list)
+        context_leases = _retained_context_leases(task_state.context_leases, runtime_task_list)
         active_context = _lease_for_task(context_leases, current_task)
         if current_task is not None and not active_context:
             active_context = _lease_for_next_task(task_state.active_context, current_task)
@@ -509,7 +510,7 @@ class AssistantProtocolService:
         updated_task_state = task_state.model_copy(
             update={
                 "slot_memory": slot_memory,
-                "task_list": task_list,
+                "task_list": runtime_task_list,
                 "current_task": current_task,
                 "active_context": active_context,
                 "context_leases": context_leases,
@@ -605,19 +606,20 @@ def _apply_plan(task_state: TaskRuntimeState, plan: PlannerOutput) -> TaskRuntim
         else _task_list_with_current_update(task_state, plan)
     )
     business_current_task = _normalized_current_task(plan, task_list)
-    current_task = _persisted_current_task(business_current_task, task_list)
+    runtime_task_list = _active_task_list(task_list)
+    current_task = _persisted_current_task(business_current_task, runtime_task_list)
     slot_memory = _persisted_slot_memory(
         task_state=task_state,
         plan=plan,
         business_current_task=business_current_task,
         current_task=current_task,
     )
-    context_leases = _context_leases_for_tasks(task_state, plan, task_list)
+    context_leases = _context_leases_for_tasks(task_state, plan, runtime_task_list)
     active_context = _lease_for_task(context_leases, current_task)
     return task_state.model_copy(
         update={
             "slot_memory": slot_memory,
-            "task_list": task_list,
+            "task_list": runtime_task_list,
             "current_task": current_task,
             "graph": plan.graph,
             "active_context": active_context,
@@ -819,6 +821,10 @@ def _next_active_task_after(
 
 def _is_terminal_task(task: PlannedTask) -> bool:
     return task.status in TERMINAL_TASK_STATUSES
+
+
+def _active_task_list(task_list: list[PlannedTask]) -> list[PlannedTask]:
+    return [task for task in task_list if not _is_terminal_task(task)]
 
 
 def _retained_context_leases(
