@@ -136,11 +136,9 @@ intent_router_harness/
 
 - `IntentRouterHarnessService` 封装 health、surface 查询和 prompt render。
 - `RenderPromptRequest` / `RenderPromptResponse` 定义稳定的服务边界数据结构。
-- `server.py` 用 Python 标准库暴露 `GET /health`、`GET /surfaces` 和 `POST /render`。
-- `POST /render` 根据请求体里的 `stream` 判断响应形态：`true` 返回 SSE，`false` 返回普通 JSON。
-- `POST /llm/render` 在服务层执行 render 后调用配置的 OpenAI-compatible LLM，并按 `stream` 返回 JSON 或 SSE。
+- `server.py` 用 Python 标准库暴露 `GET /healthz`、`GET /readyz`、`POST /api/v1/message` 和 `POST /api/v1/task/completion`。
+- `POST /api/v1/message` 根据请求体里的 `stream` 判断响应形态：`true` 返回 SSE，`false` 返回最终业务 JSON。
 - `POST /api/v1/message` 和 `POST /api/v1/task/completion` 暴露 task-first assistant protocol 服务入口。
-- 服务层同时暴露 `GET /regression/suite`、`GET /regression/cases/{case_id}` 和 `POST /regression/validate`，用于复用同一份助手协议回归 suite 校验外部 SSE transcript。
 - `python -m intent_router_harness serve ...` 可以在本地直接启动 HTTP 服务。
 - `python -m intent_router_harness serve-asgi ...` 使用 FastAPI/Uvicorn 启动部署入口。
 
@@ -148,13 +146,13 @@ intent_router_harness/
 
 - `contracts.py` 定义请求、planner output、task、session 和 assistant protocol frame。
 - `planner.py` 用 `task_planning` surface 将 spec/skill 渲染为 LLM planner prompt，并只接受结构化 JSON。
-- `session_store.py` 提供最小内存 session 状态。
+- `session_store.py` 提供最小内存 session 生命周期和独立 task runtime 存储。
 - `assistant_service.py` 将 planner output 适配为助手协议帧；`task_list` / `current_task` 是主结构，`graph` 只作为可选扩展。
 
 ## 渲染流程
 
 1. 调用方选择 surface，例如 `intent_recognition`。
-2. 调用方传入变量，例如 message、candidate intents、recommend tasks。
+2. 调用方传入变量，例如 message、task runtime、recommend tasks。
 3. harness 根据 surface 读取 `SurfaceSpec`。
 4. harness 用 runtime context 匹配 skill metadata。
 5. harness 根据 `SkillBinding` 决定是否加载完整 skill body。
@@ -163,13 +161,15 @@ intent_router_harness/
 
 ## 示例 spec
 
-`examples/finance-router-harness.toml` 当前定义了三个 surface：
+`examples/finance-router-harness.toml` 当前定义了五个 surface：
 
 - `intent_recognition`
 - `slot_extraction`
 - `graph_planning`
+- `scene_selection`
+- `task_planning`
 
-并将 `finance-routing` skill 绑定到 finance domain 下的这三个 surface。
+并将 `finance-routing` skill 绑定到 finance domain 下的相关 surface。
 
 ## 当前已验证能力
 
@@ -178,10 +178,9 @@ intent_router_harness/
 - skill body 只有在 binding 命中时才加载。
 - 未传入的模板变量会保留原样，便于分阶段填充和调试。
 - 助手协议 v0.5 回归用例可以加载并验证 SSE transcript。
-- 服务层可以直接调用，并可通过本地 HTTP `POST /render` 返回流式或非流式渲染结果。
-- 服务层可以查询回归 suite，并对单 step 或整 case 的 SSE transcript 执行协议校验。
+- 服务层可以直接调用，并可通过本地 HTTP `POST /api/v1/message` 返回流式或非流式业务结果。
 - `/api/v1/message` 可以通过 spec-driven planner 产生识别帧和业务帧。
-- `/api/v1/task/completion` 可以确认当前任务，并通过 session state 更新协议状态。
+- `/api/v1/task/completion` 可以确认当前任务，并通过 task runtime 更新协议状态。
 
 运行方式：
 
@@ -197,7 +196,6 @@ python -m pytest -q
 - variant 自动对比 runner。
 - eval case 文件加载和评分器。
 - 与任何生产服务的运行时集成。
-- prompt 输出 JSON schema 的自动校验。
 - 真实 HTTP SSE external runner。
 
 这些是下一步可以继续落地的内容。

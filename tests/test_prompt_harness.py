@@ -132,6 +132,88 @@ def test_prompt_harness_rejects_skill_with_multiple_intents(tmp_path: Path) -> N
         load_prompt_harness(spec_path)
 
 
+def test_skill_without_description_is_hidden_from_metadata_but_can_be_loaded_explicitly(tmp_path: Path) -> None:
+    skills_root = tmp_path / "skills"
+    public_dir = skills_root / "transfer-routing"
+    public_dir.mkdir(parents=True)
+    (public_dir / "SKILL.md").write_text(
+        "\n".join(
+            [
+                "---",
+                "name: transfer-routing",
+                "description: 转账路由规则",
+                'surfaces: ["task_planning"]',
+                'intent_codes: ["AG_TRANS"]',
+                'domain_codes: ["finance"]',
+                'capabilities: ["routing"]',
+                "---",
+                "# 转账路由规则",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    helper_dir = skills_root / "transfer-helper-detail"
+    helper_dir.mkdir(parents=True)
+    (helper_dir / "SKILL.md").write_text(
+        "\n".join(
+            [
+                "---",
+                "name: transfer-helper-detail",
+                'surfaces: ["task_planning"]',
+                'domain_codes: ["finance"]',
+                'capabilities: ["routing"]',
+                "---",
+                "# 内部补充规则",
+                "只在上层 skill 或 runtime 显式引用时加载。",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    spec_path = tmp_path / "harness.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                'name = "hidden-helper-test"',
+                'version = "2026.05"',
+                f'skill_roots = ["{skills_root.as_posix()}"]',
+                "",
+                "[surfaces.task_planning]",
+                'system = "规划。"',
+                'human = "用户消息：{message}"',
+                "include_skill_index = true",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    harness = load_prompt_harness(spec_path)
+    assert harness is not None
+
+    prompt = harness.render(
+        surface="task_planning",
+        variables={"message": "我要转账"},
+        domain_codes=("finance",),
+        capabilities=("routing",),
+    )
+
+    assert prompt.metadata_skills == ("transfer-routing",)
+    assert "transfer-helper-detail" not in prompt.system
+
+    explicit_prompt = harness.render(
+        surface="task_planning",
+        variables={"message": "我要转账"},
+        domain_codes=("finance",),
+        capabilities=("routing",),
+        loaded_skill_names=("transfer-helper-detail",),
+    )
+
+    assert explicit_prompt.metadata_skills == ("transfer-routing",)
+    assert explicit_prompt.loaded_skills == ("transfer-helper-detail",)
+    assert "内部补充规则" in explicit_prompt.system
+
+
 def test_unknown_template_variables_are_preserved(tmp_path: Path) -> None:
     harness = load_prompt_harness(_write_demo_harness(tmp_path))
     assert harness is not None

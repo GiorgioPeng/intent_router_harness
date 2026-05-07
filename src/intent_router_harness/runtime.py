@@ -467,7 +467,7 @@ def load_prompt_harness(
         spec.version,
         spec.enabled,
         surface_names,
-        list(spec.agent_paths),
+        list(spec.agent_paths or ["agent.md"]),
         list(spec.skill_roots),
         len(spec.bindings),
     )
@@ -481,7 +481,8 @@ def load_prompt_harness(
     roots.extend(str(Path(root).expanduser()) for root in (skill_roots or []))
     logger.info("resolved harness skill roots path=%s roots=%s", resolved_spec_path, roots)
     skills = SkillLibrary.from_roots(roots)
-    agent_contexts = _load_agent_contexts(resolved_spec_path.parent, spec.agent_paths)
+    agent_paths = spec.agent_paths or ["agent.md"]
+    agent_contexts = _load_agent_contexts(resolved_spec_path.parent, agent_paths)
     logger.info(
         "initialized prompt harness name=%s version=%s surfaces=%s agent_contexts=%s skill_count=%d skills=%s",
         spec.name,

@@ -72,6 +72,8 @@ system = """
 只返回 JSON，字段为：skill_names 和 reason。
 skill_names 必须是“可用 Skill 摘要”中列出的精确 skill name 数组。
 如果没有任何可用 skill 匹配当前消息和任务运行态，返回空数组。
+recommendTask 只作为当前轮 router 上下文；如果用户明确选择推荐任务，应结合推荐任务描述选择对应 skill。
+如果用户未采纳推荐任务而表达其他诉求，不要因为 recommendTask 存在而选择无关 skill。
 不要编造 skill name。
 不要加载或总结 skill 正文。
 """
@@ -122,6 +124,9 @@ system = """
 等待中的活跃任务优先于首轮识别示例。如果 task_state_json 中 current_task.status="waiting_user_input"，除非最新消息明确取消或切换业务目标，否则继续该任务。
 活跃 `AG_TRANS` 缺少 `payee_name` 时，如果最新消息是短的非数字人名表达，应设置 slot_memory.payee_name，并只询问剩余缺失的 `amount`。
 活跃 `AG_TRANS` 缺少 `amount` 时，如果最新消息是数字或金额表达，应设置 slot_memory.amount，必要时只询问剩余缺失的 `payee_name`。
+recommendTask 只作为当前轮 router 上下文；只有用户明确选择全部、部分或指定推荐任务时，才基于推荐任务创建 task。
+如果用户未采纳推荐任务而表达其他诉求，不要把推荐任务写入 task_list。
+如果用户没有对推荐任务做出选择，recommendTask 不得影响后续 task runtime state。
 executionMode="router_only" 时，不要编造下游 agent 执行结果。
 executionMode="router_only" 且必填槽位齐全时，返回 status="ready_for_dispatch"、completion_reason="router_ready_for_dispatch"、completion_state=0，并返回 output={{"ishandover": true, "handOverReason": "router_only_ready_for_dispatch"}}。
 不要把 slot_memory 放进 output。
