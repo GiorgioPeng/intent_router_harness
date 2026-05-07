@@ -579,7 +579,7 @@ def _business_frame(plan: PlannerOutput) -> AssistantProtocolFrame:
     current_task = _normalized_current_task(plan, task_list)
     status = _effective_protocol_status(plan, current_task)
     return AssistantProtocolFrame(
-        ok=plan.status != "failed",
+        ok=status != "failed",
         status=status,
         intent_code=plan.intent_code,
         completion_state=_completion_state(status),
