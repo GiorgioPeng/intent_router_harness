@@ -78,6 +78,7 @@ The service layer exposes the assistant protocol over HTTP:
 
 - `GET /healthz`: liveness check.
 - `GET /readyz`: readiness check and LLM configuration visibility.
+- `GET /` or `/validator`: browser validation UI for streaming message and task completion flows.
 - `POST /api/v1/message`: spec-driven assistant protocol message entrypoint.
 - `POST /api/v1/task/completion`: assistant task completion callback.
 

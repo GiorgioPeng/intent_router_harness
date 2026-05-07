@@ -239,6 +239,33 @@ def test_finance_prompt_contains_ordinal_multi_task_slot_rule() -> None:
     assert "按 task_list 顺序" in prompt.system
 
 
+def test_finance_prompt_contains_combined_active_transfer_slot_rule() -> None:
+    harness = load_prompt_harness(Path("examples/finance-router-harness.toml"))
+    assert harness is not None
+
+    prompt = harness.render(
+        surface="task_planning",
+        variables={
+            "message": "给联系人转一笔钱",
+            "execution_mode": "router_only",
+            "task_state_json": "{}",
+            "recommend_task_json": "[]",
+            "recent_messages_json": "[]",
+            "config_variables_json": "[]",
+            "planner_output_schema_json": "{}",
+        },
+        domain_codes=("finance",),
+        capabilities=("routing", "slots", "planning"),
+        loaded_skill_names=("finance-routing",),
+    )
+
+    assert "整体语义解析" in prompt.system
+    assert "一次性写入所有有依据的槽位" in prompt.system
+    assert "任意收款人姓名、称呼或实体" in prompt.system
+    assert "任意数字、中文数字或带单位的金额表达" in prompt.system
+    assert "示例只用于说明槽位归属和输出结构，不能限制可识别文本范围" in prompt.system
+
+
 def test_unknown_template_variables_are_preserved(tmp_path: Path) -> None:
     harness = load_prompt_harness(_write_demo_harness(tmp_path))
     assert harness is not None

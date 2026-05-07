@@ -83,6 +83,31 @@ def test_asgi_health_ready_and_aux_routes_are_not_exposed(tmp_path: Path) -> Non
     assert render.status_code == 404
 
 
+def test_asgi_serves_streaming_validator_ui(tmp_path: Path) -> None:
+    settings = AppSettings(
+        spec_path=_write_minimal_harness(tmp_path),
+        regression_suite_path=None,
+        llm_env_file=None,
+    )
+    app = create_app(settings)
+
+    async def run() -> tuple[httpx.Response, httpx.Response]:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            root = await client.get("/")
+            validator = await client.get("/validator")
+            return root, validator
+
+    root, validator = asyncio.run(run())
+
+    assert root.status_code == 200
+    assert root.headers["content-type"].startswith("text/html")
+    assert "Intent Router 验证台" in root.text
+    assert "ReadableStream" in root.text
+    assert "/api/v1/task/completion" in root.text
+    assert validator.status_code == 200
+
+
 def test_asgi_message_stream_uses_assistant_protocol_service(tmp_path: Path) -> None:
     task = PlannedTask(
         taskId="task_transfer",

@@ -98,6 +98,10 @@ def test_http_server_exposes_only_health_and_business_routes(tmp_path: Path) -> 
         readyz_response = conn.getresponse()
         readyz_payload = json.loads(readyz_response.read().decode("utf-8"))
 
+        conn.request("GET", "/validator")
+        validator_response = conn.getresponse()
+        validator_body = validator_response.read().decode("utf-8")
+
         conn.request(
             "POST",
             "/render",
@@ -132,6 +136,9 @@ def test_http_server_exposes_only_health_and_business_routes(tmp_path: Path) -> 
     assert healthz_payload == {"status": "ok"}
     assert readyz_response.status == 200
     assert readyz_payload["ready"] is True
+    assert validator_response.status == 200
+    assert "Intent Router 验证台" in validator_body
+    assert "/api/v1/message" in validator_body
     assert render_response.status == 404
     assert render_payload["error"]["code"] == "not_found"
     assert regression_response.status == 404

@@ -123,8 +123,12 @@ system = """
 当 task_state_json 中存在等待中的 `AG_TRANS` 任务时，下一条短回复应优先视为该任务的槽位输入：人名式文本填 `payee_name`，数字或金额式文本填 `amount`，并保留已有槽位值。
 当 task_state_json 中存在多个等待中的 `AG_TRANS` 任务时，用户用“第一笔/第一次/第一个/前一笔”“第二笔/第二次/第二个/后一笔”等顺序表达补槽，应按 task_list 顺序写入对应任务的 slot_memory。例如当前 task_list[0].payee_name="王阳明"、task_list[1].payee_name="李正义"，用户说“第一次给100元”时，应设置 task_list[0].slot_memory.amount="100"，current_task 仍指向 task_list[0]，顶层 slot_memory 也应包含王阳明和 amount=100。
 等待中的活跃任务优先于首轮识别示例。如果 task_state_json 中 current_task.status="waiting_user_input"，除非最新消息明确取消或切换业务目标，否则继续该任务。
+补槽时必须对最新消息做整体语义解析；如果同一条消息明确提供多个当前任务缺失槽位，应一次性写入所有有依据的槽位，不要只抽取第一个槽位。
 活跃 `AG_TRANS` 缺少 `payee_name` 时，如果最新消息是短的非数字人名表达，应设置 slot_memory.payee_name，并只询问剩余缺失的 `amount`。
 活跃 `AG_TRANS` 缺少 `amount` 时，如果最新消息是数字或金额表达，应设置 slot_memory.amount，必要时只询问剩余缺失的 `payee_name`。
+活跃 `AG_TRANS` 同时缺少 `payee_name` 和 `amount` 时，如果最新消息同时包含明确收款人实体和明确金额表达，必须一次性写入两个槽位；该规则适用于任意收款人姓名、称呼或实体，以及任意数字、中文数字或带单位的金额表达。
+补槽语境中，带有“转、转账、给、打款、汇”等动作词并连接数量的表达，应优先作为当前转账任务的金额槽位，不要重启任务。
+示例只用于说明槽位归属和输出结构，不能限制可识别文本范围；凡是语义上已经明确给出的收款人与金额，都应按同一规则处理。
 recommendTask 只作为当前轮 router 上下文；只有用户明确选择全部、部分或指定推荐任务时，才基于推荐任务创建 task。
 如果用户未采纳推荐任务而表达其他诉求，不要把推荐任务写入 task_list。
 如果用户没有对推荐任务做出选择，recommendTask 不得影响后续 task runtime state。

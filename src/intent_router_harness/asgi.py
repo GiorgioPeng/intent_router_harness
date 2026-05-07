@@ -8,7 +8,7 @@ from threading import Thread
 from typing import Any, Iterable
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from intent_router_harness.config import AppSettings
 from intent_router_harness.contracts import (
     AssistantServiceResult,
@@ -16,6 +16,7 @@ from intent_router_harness.contracts import (
     RouterMessageRequest,
     TaskCompletionRequest,
 )
+from intent_router_harness.debug_ui import validator_html
 from intent_router_harness.service import (
     IntentRouterHarnessService,
     ServiceConfigurationError,
@@ -70,6 +71,14 @@ def create_app(
             "service": "intent_router_harness",
             "llm_configured": resolved_service.llm_client is not None,
         }
+
+    @app.get("/", response_class=HTMLResponse)
+    def index() -> str:
+        return validator_html()
+
+    @app.get("/validator", response_class=HTMLResponse)
+    def validator() -> str:
+        return validator_html()
 
     @app.post("/api/v1/message")
     def message(request: RouterMessageRequest):

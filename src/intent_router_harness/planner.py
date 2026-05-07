@@ -352,6 +352,9 @@ def _planner_output_schema_json() -> str:
             "如果 router_only 模式下必填槽位齐全，使用 status=ready_for_dispatch 和 completion_reason=router_ready_for_dispatch。",
             "只能使用已加载 skill 中声明的标准 intent_code，不要编造展示名或泛化标签。",
             "当 task runtime state 中存在等待中的活跃任务时，将短回复优先解释为该任务的槽位值，并保留已有 slot_memory。",
+            "补槽时必须整体解析最新消息；如果同一条消息明确提供多个当前任务缺失槽位，应一次性写入所有有依据的槽位。",
+            "当等待中的活跃 AG_TRANS 同时缺少 payee_name 和 amount，且用户同句给出明确收款人实体和明确金额表达时，必须一次性补齐两个槽位。",
+            "planner_output_schema_json 中的 examples 仅说明输出结构和状态选择，不限定可识别文本范围。",
             "当 task runtime state 中存在多个等待任务时，第一笔/第一次/第一个、第二笔/第二次/第二个等顺序表达应按 task_list 顺序定位任务并补充对应 slot_memory。",
             "recommendTask 只作为当前轮 router 上下文；只有用户明确选择全部、部分或指定推荐任务时，才基于推荐任务创建 task。",
             "如果用户未采纳推荐任务而表达其他诉求，不要把推荐任务写入 task_list。",
@@ -456,6 +459,46 @@ def _planner_output_schema_json() -> str:
                 },
                 "message": "请提供转账金额",
                 "output": {},
+            },
+            "active_transfer_combined_slot_reply": {
+                "mode": "slot_filling",
+                "status": "ready_for_dispatch",
+                "completion_state": 0,
+                "completion_reason": "router_ready_for_dispatch",
+                "intent_code": "AG_TRANS",
+                "recognition": {
+                    "intent_code": "AG_TRANS",
+                },
+                "slot_memory": {"payee_name": "收款人甲", "amount": "1000"},
+                "task_list": [
+                    {
+                        "taskId": "task_001",
+                        "intent_code": "AG_TRANS",
+                        "status": "ready_for_dispatch",
+                        "title": "转账给收款人甲",
+                        "slot_memory": {"payee_name": "收款人甲", "amount": "1000"},
+                        "output": {
+                            "ishandover": True,
+                            "handOverReason": "router_only_ready_for_dispatch",
+                        },
+                    }
+                ],
+                "current_task": {
+                    "taskId": "task_001",
+                    "intent_code": "AG_TRANS",
+                    "status": "ready_for_dispatch",
+                    "title": "转账给收款人甲",
+                    "slot_memory": {"payee_name": "收款人甲", "amount": "1000"},
+                    "output": {
+                        "ishandover": True,
+                        "handOverReason": "router_only_ready_for_dispatch",
+                    },
+                },
+                "message": "",
+                "output": {
+                    "ishandover": True,
+                    "handOverReason": "router_only_ready_for_dispatch",
+                },
             },
             "multi_transfer_missing_amounts": {
                 "mode": "multi_task",
