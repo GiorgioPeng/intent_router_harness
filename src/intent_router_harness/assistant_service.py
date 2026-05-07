@@ -59,13 +59,13 @@ class AssistantProtocolService:
             request.executionMode,
             _truncate_for_log(request.txt, 300),
         )
-        user_id = _request_user_id(request)
-        session_load = self.sessions.load(request.sessionId, user_id=user_id)
+        user_binding_id = _request_user_binding_id(request)
+        session_load = self.sessions.load(request.sessionId, user_binding_id=user_binding_id)
         session = session_load.session
         logger.info(
-            "core.session.loaded session_id=%s user_id=%s expired=%s user_bound=%s status=%s completion_reason=%s slot_memory=%s current_task=%s task_count=%d active_context=%s",
+            "core.session.loaded session_id=%s user_binding_id=%s expired=%s user_bound=%s status=%s completion_reason=%s slot_memory=%s current_task=%s task_count=%d active_context=%s",
             request.sessionId,
-            session.user_id,
+            session.user_binding_id,
             session_load.expired,
             session_load.user_bound,
             session.status,
@@ -83,7 +83,7 @@ class AssistantProtocolService:
                     summary=f"status={session.status}，task_count={len(session.task_list)}",
                     data={
                         "session_id": session.session_id,
-                        "user_id": session.user_id,
+                        "user_binding_id": session.user_binding_id,
                         "expired": session_load.expired,
                         "user_bound": session_load.user_bound,
                         "expires_at": session.expires_at.isoformat() if session.expires_at else None,
@@ -108,7 +108,7 @@ class AssistantProtocolService:
                         summary=f"session={request.sessionId} 已绑定用户",
                         data={
                             "session_id": request.sessionId,
-                            "user_id": session.user_id,
+                            "user_binding_id": session.user_binding_id,
                         },
                     )
                 )
@@ -121,7 +121,7 @@ class AssistantProtocolService:
                         summary="旧 session 已过期，已清理槽位、任务和上下文引用",
                         data={
                             "session_id": request.sessionId,
-                            "user_id": session.user_id,
+                            "user_binding_id": session.user_binding_id,
                         },
                     )
                 )
@@ -356,9 +356,9 @@ class AssistantProtocolService:
         session_load = self.sessions.load(request.sessionId)
         session = session_load.session
         logger.info(
-            "core.session.loaded session_id=%s user_id=%s expired=%s status=%s completion_reason=%s slot_memory=%s current_task=%s task_count=%d active_context=%s",
+            "core.session.loaded session_id=%s user_binding_id=%s expired=%s status=%s completion_reason=%s slot_memory=%s current_task=%s task_count=%d active_context=%s",
             request.sessionId,
-            session.user_id,
+            session.user_binding_id,
             session_load.expired,
             session.status,
             session.completion_reason,
@@ -375,7 +375,7 @@ class AssistantProtocolService:
                     summary=f"status={session.status}，task_count={len(session.task_list)}",
                     data={
                         "session_id": session.session_id,
-                        "user_id": session.user_id,
+                        "user_binding_id": session.user_binding_id,
                         "expired": session_load.expired,
                         "expires_at": session.expires_at.isoformat() if session.expires_at else None,
                         "status": session.status,
@@ -399,7 +399,7 @@ class AssistantProtocolService:
                         summary="旧 session 已过期，已清理槽位、任务和上下文引用",
                         data={
                             "session_id": request.sessionId,
-                            "user_id": session.user_id,
+                            "user_binding_id": session.user_binding_id,
                         },
                     )
                 )
@@ -660,7 +660,12 @@ def _effective_intent_code(plan: PlannerOutput) -> str | None:
     return None
 
 
-def _request_user_id(request: RouterMessageRequest) -> str | None:
+def _request_user_binding_id(request: RouterMessageRequest) -> str | None:
+    variables = {item.name: item.value for item in request.config_variables}
+    for name in ("cust_no", "custNo", "custNO"):
+        value = variables.get(name)
+        if value is not None and str(value).strip():
+            return str(value)
     if request.custId:
         return request.custId
     for item in request.config_variables:

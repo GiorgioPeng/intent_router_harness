@@ -142,7 +142,7 @@ class SessionState(BaseModel):
     """Persisted router session state."""
 
     session_id: str
-    user_id: str | None = None
+    user_binding_id: str | None = None
     status: AssistantStatus = "running"
     completion_reason: str = ""
     slot_memory: dict[str, Any] = Field(default_factory=dict)

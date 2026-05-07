@@ -404,7 +404,7 @@ def test_session_binds_to_single_user_and_rejects_mismatch(tmp_path: Path) -> No
         RouterMessageRequest(
             sessionId="owned_session",
             txt="我要转账",
-            custId="user_a",
+            config_variables=[{"name": "cust_no", "value": "cust_001"}],
         )
     )
 
@@ -413,7 +413,7 @@ def test_session_binds_to_single_user_and_rejects_mismatch(tmp_path: Path) -> No
             RouterMessageRequest(
                 sessionId="owned_session",
                 txt="我要转账",
-                custId="user_b",
+                config_variables=[{"name": "cust_no", "value": "cust_002"}],
             )
         )
     except RuntimeError as exc:
@@ -459,7 +459,7 @@ def test_session_expires_after_idle_timeout_and_clears_memory(tmp_path: Path) ->
         RouterMessageRequest(
             sessionId="expiring_session",
             txt="给小明转账",
-            custId="user_a",
+            config_variables=[{"name": "cust_no", "value": "cust_001"}],
         )
     )
     saved = service.assistant.sessions.get_or_create("expiring_session")
@@ -467,7 +467,7 @@ def test_session_expires_after_idle_timeout_and_clears_memory(tmp_path: Path) ->
     assert saved.context_leases
 
     now = now + timedelta(minutes=31)
-    expired = service.assistant.sessions.load("expiring_session", user_id="user_a")
+    expired = service.assistant.sessions.load("expiring_session", user_binding_id="cust_001")
 
     assert expired.expired is True
     assert expired.session.slot_memory == {}
