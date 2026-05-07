@@ -15,6 +15,7 @@ from typing import Any, Iterator
 
 
 DEFAULT_BASE_URL = os.getenv("INTENT_ROUTER_BASE_URL", "http://127.0.0.1:8765")
+# DEFAULT_BASE_URL = os.getenv("INTENT_ROUTER_BASE_URL", "http://ai.intent-router.cc")
 DEFAULT_CUST_NO = "C0001"
 DEFAULT_CURRENT_DISPLAY = "transfer_page"
 DEFAULT_TIMEOUT_SECONDS = 180

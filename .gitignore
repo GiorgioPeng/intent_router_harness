@@ -28,3 +28,4 @@ __pycache__/
 *.csv
 *.sqlite
 *.db
+/lab
