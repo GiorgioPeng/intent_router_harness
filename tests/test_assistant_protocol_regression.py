@@ -6,15 +6,15 @@ from intent_router_harness.assistant_protocol import ProtocolAssertionError, par
 from intent_router_harness.regression import load_regression_suite, validate_step_transcript
 
 
-SUITE_PATH = "regressions/assistant_protocol_v0_5.json"
+SUITE_PATH = "regressions/assistant_protocol_v0_6.json"
 
 
-def test_v0_5_suite_covers_documented_cases() -> None:
+def test_v0_6_suite_covers_documented_cases() -> None:
     suite = load_regression_suite(SUITE_PATH)
 
-    assert suite.version == "0.5"
+    assert suite.version == "0.6"
     assert suite.primary_mode == "sse"
-    assert suite.case_ids() == {f"TC-S{index:02d}" for index in range(1, 16)} | {"TC-S04B"}
+    assert suite.case_ids() == {f"TC-S{index:02d}" for index in range(1, 16)}
     assert all(step.stream for case in suite.cases for step in case.steps)
 
 
@@ -37,13 +37,13 @@ data: [DONE]
     validate_step_transcript(step, events)
 
 
-def test_tc_s04_router_only_requires_non_empty_handover_output() -> None:
+def test_tc_s04_router_only_ready_does_not_require_handover_output() -> None:
     suite = load_regression_suite(SUITE_PATH)
     step = suite.case_by_id("TC-S04").steps[-1]
     events = parse_sse_text(
         """
 event: message
-data: {"ok": true, "status": "ready_for_dispatch", "completion_state": 1, "completion_reason": "router_ready_for_dispatch", "slot_memory": {"payee_name": "小红", "amount": "200"}, "output": {"ishandover": true, "handOverReason": "router_only_ready_for_dispatch"}}
+data: {"ok": true, "status": "ready_for_dispatch", "completion_state": 1, "completion_reason": "router_ready_for_dispatch", "slot_memory": {"payee_name": "小红", "amount": "200"}, "output": {}}
 
 event: done
 data: [DONE]

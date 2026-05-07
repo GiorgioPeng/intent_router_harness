@@ -76,7 +76,7 @@ class RegressionCase(BaseModel):
 
 
 class RegressionSuite(BaseModel):
-    """Versioned regression suite extracted from the v0.5 document."""
+    """Versioned assistant protocol regression suite."""
 
     version: str
     source_document: str

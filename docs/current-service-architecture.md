@@ -95,7 +95,7 @@ flowchart TB
 
     subgraph Tests[回归测试层]
         regression[regression.py\n回归用例加载和校验]
-        cases[assistant_protocol_v0_5.json\n回归用例]
+        cases[assistant_protocol_v0_6.json\n回归用例]
     end
 
     asgi --> service

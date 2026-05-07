@@ -263,6 +263,9 @@ def test_finance_prompt_contains_combined_active_transfer_slot_rule() -> None:
     assert "一次性写入所有有依据的槽位" in prompt.system
     assert "任意收款人姓名、称呼或实体" in prompt.system
     assert "任意数字、中文数字或带单位的金额表达" in prompt.system
+    assert "三百元" in prompt.system
+    assert "叁佰圆" in prompt.system
+    assert 'amount="300"' in prompt.system
     assert "示例只用于说明槽位归属和输出结构，不能限制可识别文本范围" in prompt.system
 
 

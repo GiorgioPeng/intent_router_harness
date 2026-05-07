@@ -281,10 +281,7 @@ sequenceDiagram
     "payee_name": "小明",
     "amount": "200"
   },
-  "output": {
-    "ishandover": true,
-    "handOverReason": "router_only_ready_for_dispatch"
-  }
+  "output": {}
 }
 ```
 
@@ -295,7 +292,6 @@ flowchart LR
     running["running\nintent_recognized"] --> waiting["waiting_user_input\n缺槽"]
     waiting --> waiting
     waiting --> ready["ready_for_dispatch\nrouter_only 槽齐"]
-    ready --> handover["handover output\nishandover=true"]
     running --> failed["failed\nrouter_error"]
     ready --> waitAgent["waiting_assistant_completion\nexecute 模式等待下游"]
     waitAgent --> completed["completed\nassistant_final_done"]

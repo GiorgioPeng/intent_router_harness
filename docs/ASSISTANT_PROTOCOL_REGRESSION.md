@@ -1,12 +1,12 @@
-# 助手协议回归 v0.5 实现说明
+# 助手协议回归 v0.6 实现说明
 
-本文说明 `docs/router-service-助手协议回归测试用例-v0.5.md` 在本独立项目中的落地方式。
+本文说明 `docs/router-service-助手协议回归测试用例-v0.6.md` 在本独立项目中的落地方式。
 
 ## 实现范围
 
 当前已实现四类资产：
 
-- `regressions/assistant_protocol_v0_5.json`：从 v0.5 文档提取的 16 个详细回归用例，包含 TC-S04B。
+- `regressions/assistant_protocol_v0_6.json`：当前助手协议结构化回归用例。
 - `intent_router_harness.assistant_protocol`：SSE transcript parser 和助手协议校验器。
 - `intent_router_harness.regression`：回归 suite / case / step / expectation loader。
 - `intent_router_harness.service` / `server`：通过 HTTP 暴露 suite 查询和 transcript 校验。
@@ -14,7 +14,7 @@
 
 默认测试不访问旧 `router-service`，也不访问真实大模型。它验证的是：
 
-- v0.5 文档中的 TC-S01 到 TC-S15 和 TC-S04B 已结构化保存。
+- v0.6 结构化用例覆盖当前协议校验基线。
 - SSE 必须以 `event: done` / `data: [DONE]` 收尾。
 - 可识别场景必须先推 `intent_recognition` / `intent_recognized`。
 - 业务帧和识别帧必须分开判定。
@@ -34,7 +34,7 @@ python -m pytest -q
 查看 suite 摘要：
 
 ```bash
-python -m intent_router_harness show-suite regressions/assistant_protocol_v0_5.json
+python -m intent_router_harness show-suite regressions/assistant_protocol_v0_6.json
 ```
 
 启动 HTTP harness 服务后可以查询 suite 并校验 transcript：
@@ -51,12 +51,12 @@ curl -s http://127.0.0.1:8765/regression/validate \
 
 本项目不内置旧 `router-service` 运行时。后续如果要接真实服务，需要新增一个 external runner：
 
-1. 读取 `regressions/assistant_protocol_v0_5.json`。
+1. 读取 `regressions/assistant_protocol_v0_6.json`。
 2. 按 step 发送 HTTP SSE 请求。
 3. 将响应 body 交给 `parse_sse_text()`。
 4. 调用 `validate_step_transcript()`。
 
-这样能复用同一份 v0.5 用例和协议断言，同时保持当前项目独立。
+这样能复用同一份 v0.6 用例和协议断言，同时保持当前项目独立。
 
 ## 大模型连通性
 

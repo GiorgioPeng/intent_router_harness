@@ -4,7 +4,7 @@
 
 ## 1. 版本定位
 
-本版本基于当前 `intent_router_harness` 项目重新整理。旧版 v0.5 只作为协议格式和历史场景参考，不再沿用旧 router-service 的 backend 路径、`primary/candidates`、`candidate_intents`、agent 代理透传等概念。
+本版本基于当前 `intent_router_harness` 项目重新整理，不再沿用旧 router-service 的 backend 路径、`primary/candidates`、`candidate_intents`、agent 代理透传等概念。
 
 当前服务的核心验收对象是：
 
@@ -423,12 +423,11 @@ input_required
     "payee_name": "小明",
     "amount": "200"
   },
-  "output": {
-    "ishandover": true,
-    "handOverReason": "router_only_ready_for_dispatch"
-  }
+  "output": {}
 }
 ```
+
+当前版本暂不把 `ishandover` 作为核心验收字段；后续交接协议调整后再统一收敛 handover 相关断言。
 
 ### TC-R04 同句补多个槽位
 
@@ -439,6 +438,7 @@ input_required
    - `给赵六转200元`
    - `转10000元给刘京生`
    - `给客户甲打款三百元`
+   - `给客户乙汇款叁佰圆`
 
 期望第二轮最终业务帧：
 
@@ -652,10 +652,10 @@ input_required
 PYTHONPATH=src pytest -q
 ```
 
-查看旧版结构化 suite：
+查看结构化 suite：
 
 ```bash
-PYTHONPATH=src python -m intent_router_harness show-suite regressions/assistant_protocol_v0_5.json
+PYTHONPATH=src python -m intent_router_harness show-suite regressions/assistant_protocol_v0_6.json
 ```
 
 启动本地 ASGI 服务：
@@ -678,7 +678,7 @@ PYTHONPATH=src python -m intent_router_harness llm-smoke --env-file .env.local
 
 ## 7. 下一步结构化建议
 
-建议新增 `regressions/assistant_protocol_v0_6.json`，按本文 P0 用例优先结构化：
+当前结构化 suite 为 `regressions/assistant_protocol_v0_6.json`，后续按本文 P0 用例继续补齐：
 
 1. `TC-M01`、`TC-M02`、`TC-M03`：锁定流式/非流式协议语义。
 2. `TC-D01`、`TC-D02`：锁定 debugTrace 可观测性和默认无 trace。
@@ -688,4 +688,4 @@ PYTHONPATH=src python -m intent_router_harness llm-smoke --env-file .env.local
 6. `TC-SE01`、`TC-SE02`：锁定 session 生命周期和用户隔离。
 7. `TC-ERR01`、`TC-ERR02`：锁定失败路径。
 
-旧 `assistant_protocol_v0_5.json` 暂不删除，作为历史兼容校验；新开发和验收以 v0.6 文档为准。
+新开发和验收以 v0.6 文档与 `assistant_protocol_v0_6.json` 为准。

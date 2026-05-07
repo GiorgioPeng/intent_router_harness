@@ -477,10 +477,7 @@ def _planner_output_schema_json() -> str:
                         "status": "ready_for_dispatch",
                         "title": "转账给收款人甲",
                         "slot_memory": {"payee_name": "收款人甲", "amount": "1000"},
-                        "output": {
-                            "ishandover": True,
-                            "handOverReason": "router_only_ready_for_dispatch",
-                        },
+                        "output": {},
                     }
                 ],
                 "current_task": {
@@ -489,16 +486,10 @@ def _planner_output_schema_json() -> str:
                     "status": "ready_for_dispatch",
                     "title": "转账给收款人甲",
                     "slot_memory": {"payee_name": "收款人甲", "amount": "1000"},
-                    "output": {
-                        "ishandover": True,
-                        "handOverReason": "router_only_ready_for_dispatch",
-                    },
+                    "output": {},
                 },
                 "message": "",
-                "output": {
-                    "ishandover": True,
-                    "handOverReason": "router_only_ready_for_dispatch",
-                },
+                "output": {},
             },
             "multi_transfer_missing_amounts": {
                 "mode": "multi_task",
@@ -556,10 +547,7 @@ def _planner_output_schema_json() -> str:
                         "status": "ready_for_dispatch",
                         "title": "转账给王阳明",
                         "slot_memory": {"payee_name": "王阳明", "amount": "100"},
-                        "output": {
-                            "ishandover": True,
-                            "handOverReason": "router_only_ready_for_dispatch",
-                        },
+                        "output": {},
                     },
                     {
                         "taskId": "task_002",
@@ -576,16 +564,10 @@ def _planner_output_schema_json() -> str:
                     "status": "ready_for_dispatch",
                     "title": "转账给王阳明",
                     "slot_memory": {"payee_name": "王阳明", "amount": "100"},
-                    "output": {
-                        "ishandover": True,
-                        "handOverReason": "router_only_ready_for_dispatch",
-                    },
+                    "output": {},
                 },
                 "message": "",
-                "output": {
-                    "ishandover": True,
-                    "handOverReason": "router_only_ready_for_dispatch",
-                },
+                "output": {},
             },
         },
     }

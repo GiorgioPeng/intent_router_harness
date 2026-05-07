@@ -16,7 +16,7 @@ class AppSettings(BaseSettings):
     )
 
     spec_path: Path = Path("examples/finance-router-harness.toml")
-    regression_suite_path: Path | None = Path("regressions/assistant_protocol_v0_5.json")
+    regression_suite_path: Path | None = Path("regressions/assistant_protocol_v0_6.json")
     llm_env_file: Path | None = Path(".env.local")
     skill_roots: list[str] = Field(default_factory=list)
     expose_prompt_payloads: bool = True

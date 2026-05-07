@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     serve_parser.add_argument(
         "--regression-suite",
         type=Path,
-        default=Path("regressions/assistant_protocol_v0_5.json"),
+        default=Path("regressions/assistant_protocol_v0_6.json"),
     )
     serve_parser.add_argument("--llm-env-file", type=Path, default=Path(".env.local"))
 

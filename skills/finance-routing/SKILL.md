@@ -48,6 +48,8 @@ references: [{"id": "ref_001", "path": "references/ref_001.md", "purpose": "AG_T
 - 当前 `AG_TRANS` 缺少 `payee_name` 时，如果最新消息是短的非数字人名表达，应更新 `slot_memory.payee_name`，下一句只询问剩余缺失的 `amount`。
 - 当前 `AG_TRANS` 缺少 `amount` 时，如果最新消息是数字或金额表达，应更新 `slot_memory.amount`，必要时只询问剩余缺失的 `payee_name`。
 - 当前等待中的 `AG_TRANS` 同时缺少 `payee_name` 和 `amount` 时，如果最新消息同时包含明确收款人实体和明确金额表达，必须一次性写入两个槽位；该规则适用于任意收款人姓名、称呼或实体，以及任意数字、中文数字或带单位的金额表达。
+- 中文金额表达包括小写数字和财务大写数字，也包括“元/圆/块”等常见单位；例如“三百元”“叁佰圆”“壹仟贰佰元”应分别归一化为 `amount="300"`、`amount="300"`、`amount="1200"`。
+- 同句补槽示例：“给客户甲打款三百元”“给客户乙汇款叁佰圆”都应同时写入 `payee_name` 和 `amount`，并在槽位齐全时进入 `ready_for_dispatch`。
 - 在补槽语境中，带有“转、转账、给、打款、汇”等动作词并连接数量的表达，应优先作为当前转账任务的金额槽位，不是新的独立意图。
 - 示例只用于说明槽位归属和输出结构，不能限制可识别文本范围；凡是语义上已经明确给出的收款人与金额，都应按同一规则处理。
 - 如果用户在同一句话中表达多个转账任务，并明确给出不同收款人，必须把每个收款人写入对应 task 的 `slot_memory.payee_name`，不要只写在 `title` 中。
@@ -80,5 +82,5 @@ references: [{"id": "ref_001", "path": "references/ref_001.md", "purpose": "AG_T
 
 ## 交接语义
 
-- 在 `router_only` 模式下，ready 节点必须返回非空交接输出，且 `ishandover=true`、`handOverReason="router_only_ready_for_dispatch"`。
-- 如果业务 agent 返回 `ishandover=true` 但 `output` 为空，不视为成功结果；应将同一任务路由到配置的兜底意图或 agent。
+- 在 `router_only` 模式下，ready 节点必须返回 `ready_for_dispatch`。
+- 当前版本暂不把 `ishandover` 作为核心判断逻辑；后续交接协议调整后再统一收敛 handover 字段。

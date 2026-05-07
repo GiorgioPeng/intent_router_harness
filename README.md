@@ -54,11 +54,11 @@ print(prompt.messages())
 See [docs/DESIGN.md](docs/DESIGN.md) for the current architecture, DeepAgents
 harness references, implementation model, and next steps.
 
-See [docs/ASSISTANT_PROTOCOL_REGRESSION.md](docs/ASSISTANT_PROTOCOL_REGRESSION.md)
-for the `router-service-助手协议回归测试用例-v0.5` implementation.
-
 See [docs/router-service-助手协议回归测试用例-v0.6.md](docs/router-service-助手协议回归测试用例-v0.6.md)
 for the current project-aligned regression case plan.
+
+See [docs/ASSISTANT_PROTOCOL_REGRESSION.md](docs/ASSISTANT_PROTOCOL_REGRESSION.md)
+for the structured regression suite implementation.
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for ASGI deployment instructions.
 
@@ -66,7 +66,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for ASGI deployment instructions.
 
 ```bash
 python -m pytest -q
-PYTHONPATH=src python -m intent_router_harness show-suite regressions/assistant_protocol_v0_5.json
+PYTHONPATH=src python -m intent_router_harness show-suite regressions/assistant_protocol_v0_6.json
 PYTHONPATH=src python -m intent_router_harness llm-smoke --env-file .env.local
 PYTHONPATH=src python -m intent_router_harness serve examples/finance-router-harness.toml --port 8765
 PYTHONPATH=src python -m intent_router_harness serve-asgi --host 0.0.0.0 --port 8765

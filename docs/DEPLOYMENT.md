@@ -26,7 +26,7 @@ ASGI settings use the `INTENT_ROUTER_HARNESS_` environment prefix:
 
 ```bash
 INTENT_ROUTER_HARNESS_SPEC_PATH=examples/finance-router-harness.toml
-INTENT_ROUTER_HARNESS_REGRESSION_SUITE_PATH=regressions/assistant_protocol_v0_5.json
+INTENT_ROUTER_HARNESS_REGRESSION_SUITE_PATH=regressions/assistant_protocol_v0_6.json
 INTENT_ROUTER_HARNESS_LLM_ENV_FILE=.env.local
 ```
 

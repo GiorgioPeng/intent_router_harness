@@ -81,7 +81,7 @@ intent_router_harness/
   examples/
     finance-router-harness.toml
   regressions/
-    assistant_protocol_v0_5.json
+    assistant_protocol_v0_6.json
   skills/
     finance-routing/
       SKILL.md
@@ -129,7 +129,7 @@ intent_router_harness/
 
 - `parse_sse_text()` 解析 `event: message` / `event: done` transcript。
 - 协议断言区分识别帧和业务帧。
-- `load_regression_suite()` 加载结构化 v0.5 回归用例。
+- `load_regression_suite()` 加载结构化 v0.6 回归用例。
 - `validate_step_transcript()` 将真实或 mock SSE transcript 套用到 case step。
 
 `service.py` 和 `server.py` 负责服务层：
@@ -177,7 +177,7 @@ intent_router_harness/
 
 - skill body 只有在 binding 命中时才加载。
 - 未传入的模板变量会保留原样，便于分阶段填充和调试。
-- 助手协议 v0.5 回归用例可以加载并验证 SSE transcript。
+- 助手协议 v0.6 回归用例可以加载并验证 SSE transcript。
 - 服务层可以直接调用，并可通过本地 HTTP `POST /api/v1/message` 返回流式或非流式业务结果。
 - `/api/v1/message` 可以通过 spec-driven planner 产生识别帧和业务帧。
 - `/api/v1/task/completion` 可以确认当前任务，并通过 task runtime 更新协议状态。

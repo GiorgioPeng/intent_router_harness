@@ -25,7 +25,7 @@ from intent_router_harness.service import IntentRouterHarnessService
 from intent_router_harness.session_store import InMemorySessionStore
 
 
-SUITE_PATH = "regressions/assistant_protocol_v0_5.json"
+SUITE_PATH = "regressions/assistant_protocol_v0_6.json"
 
 
 class StaticPlanner:
@@ -264,7 +264,7 @@ def test_v1_message_non_stream_returns_final_business_frame(tmp_path: Path) -> N
     assert response.status == 200
     assert payload["status"] == "ready_for_dispatch"
     assert payload["completion_reason"] == "router_ready_for_dispatch"
-    assert payload["output"]["ishandover"] is True
+    assert isinstance(payload["output"], dict)
     assert "snapshot" not in payload
 
 
