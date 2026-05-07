@@ -47,7 +47,7 @@ class AssistantProtocolService:
                         "stream": request.stream,
                         "execution_mode": request.executionMode,
                         "text": request.txt,
-                        "cust_id": request.custId,
+                        "user_binding_id": _request_user_binding_id(request),
                     },
                 )
             )
@@ -666,13 +666,6 @@ def _request_user_binding_id(request: RouterMessageRequest) -> str | None:
         value = variables.get(name)
         if value is not None and str(value).strip():
             return str(value)
-    if request.custId:
-        return request.custId
-    for item in request.config_variables:
-        if item.name in {"user_id", "userId", "cust_id", "custId", "custID"} and item.value is not None:
-            if str(item.value).strip() == "":
-                continue
-            return str(item.value)
     return None
 
 
