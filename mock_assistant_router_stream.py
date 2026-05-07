@@ -35,7 +35,7 @@ class SSEFrame:
 
 def default_session_id() -> str:
     """Return a notebook/CLI friendly default assistant session id."""
-    return f"{DEFAULT_SESSION_ID_PREFIX}_{int(time.time())}"
+    return f"{DEFAULT_SESSION_ID_PREFIX}_{int(time.time()//1000)}"
 
 
 def build_assistant_to_router_payload(
