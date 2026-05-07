@@ -71,7 +71,7 @@ system = """
 只能使用 harness 上下文中“可用 Skill 摘要”的 name 和 description。
 只返回 JSON，字段为：skill_names 和 reason。
 skill_names 必须是“可用 Skill 摘要”中列出的精确 skill name 数组。
-如果没有任何可用 skill 匹配当前消息和 session 状态，返回空数组。
+如果没有任何可用 skill 匹配当前消息和任务运行态，返回空数组。
 不要编造 skill name。
 不要加载或总结 skill 正文。
 """
@@ -82,8 +82,8 @@ human = """
 执行模式：
 {execution_mode}
 
-Session 状态 JSON：
-{session_state_json}
+任务运行态 JSON：
+{task_state_json}
 
 推荐任务 JSON：
 {recommend_task_json}
@@ -109,8 +109,13 @@ system = """
 如果必填槽位缺失，绝不能返回 ready_for_dispatch。
 不要把 enum、required、fields、rules、description、examples 等 schema 辅助键复制到输出 JSON。
 用户说“我要转账”且没有收款人和金额时，应输出 intent_code="AG_TRANS"、status="waiting_user_input"、completion_reason="router_waiting_user_input"、slot_memory={{}}、output={{}}，并询问收款人和金额。
-当 session_state_json 中存在等待中的 `AG_TRANS` 任务时，下一条短回复应优先视为该任务的槽位输入：人名式文本填 `payee_name`，数字或金额式文本填 `amount`，并保留已有槽位值。
-等待中的活跃任务优先于首轮识别示例。如果 session_state_json 中 current_task.status="waiting_user_input"，除非最新消息明确取消或切换业务目标，否则继续该任务。
+任务标题只是展示文本，不能代替槽位；用户消息中已经明确给出的收款人、金额等槽位，必须写入当前任务或对应任务的 slot_memory。
+当用户一次表达多笔转账时，按表达顺序生成多个 AG_TRANS 任务，并把每笔转账片段中的收款人和金额分别写入对应 task_list[].slot_memory。不要把第一笔的槽位写到第二笔，也不要只写进 title。
+多任务场景下顶层 slot_memory 表示 current_task 的槽位；current_task 必须与 task_list 中同一 taskId 的任务保持一致。
+多任务串行推进时，同一时刻只有一个 current_task。顶层 status 应反映 current_task 的状态：当前任务缺槽时返回 status="waiting_user_input" 和 completion_reason="router_waiting_user_input"。
+例如用户说“我要先给收款人甲转账，再给收款人乙转账”，但未给金额时，应生成两个 AG_TRANS 任务：task_001.slot_memory.payee_name="收款人甲"，task_002.slot_memory.payee_name="收款人乙"，current_task=task_001，顶层 status="waiting_user_input"，message 只询问第一笔转账金额。
+当 task_state_json 中存在等待中的 `AG_TRANS` 任务时，下一条短回复应优先视为该任务的槽位输入：人名式文本填 `payee_name`，数字或金额式文本填 `amount`，并保留已有槽位值。
+等待中的活跃任务优先于首轮识别示例。如果 task_state_json 中 current_task.status="waiting_user_input"，除非最新消息明确取消或切换业务目标，否则继续该任务。
 活跃 `AG_TRANS` 缺少 `payee_name` 时，如果最新消息是短的非数字人名表达，应设置 slot_memory.payee_name，并只询问剩余缺失的 `amount`。
 活跃 `AG_TRANS` 缺少 `amount` 时，如果最新消息是数字或金额表达，应设置 slot_memory.amount，必要时只询问剩余缺失的 `payee_name`。
 executionMode="router_only" 时，不要编造下游 agent 执行结果。
@@ -124,8 +129,8 @@ human = """
 执行模式：
 {execution_mode}
 
-Session 状态 JSON：
-{session_state_json}
+任务运行态 JSON：
+{task_state_json}
 
 推荐任务 JSON：
 {recommend_task_json}

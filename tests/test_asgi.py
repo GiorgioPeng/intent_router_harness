@@ -12,7 +12,7 @@ from intent_router_harness.contracts import (
     PlannerOutput,
     RecognitionPlan,
     RouterMessageRequest,
-    SessionState,
+    TaskRuntimeState,
 )
 from intent_router_harness.service import IntentRouterHarnessService
 
@@ -24,7 +24,7 @@ class StaticPlanner:
     def plan_message(
         self,
         request: RouterMessageRequest,
-        session: SessionState,
+        task_state: TaskRuntimeState,
     ) -> PlannerOutput:
         return self.output
 

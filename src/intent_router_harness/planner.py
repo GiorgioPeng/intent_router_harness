@@ -10,7 +10,7 @@ from intent_router_harness.contracts import (
     AssistantTraceEvent,
     PlannerOutput,
     RouterMessageRequest,
-    SessionState,
+    TaskRuntimeState,
 )
 from intent_router_harness.llm import LLMClient, LLMRequestError
 from intent_router_harness.runtime import PromptHarness
@@ -39,7 +39,7 @@ class MessagePlanner(Protocol):
     def plan_message(
         self,
         request: RouterMessageRequest,
-        session: SessionState,
+        task_state: TaskRuntimeState,
     ) -> PlannerOutput:
         """Return a structured planner output."""
 
@@ -65,26 +65,25 @@ class LLMMessagePlanner:
     def plan_message(
         self,
         request: RouterMessageRequest,
-        session: SessionState,
+        task_state: TaskRuntimeState,
     ) -> PlannerOutput:
         """Render task-planning prompt and validate the LLM JSON output."""
         include_trace = request.debugTrace
         logger.info(
-            "llm.plan.start session_id=%s execution_mode=%s text=%s session_status=%s session_slot_memory=%s current_task=%s",
+            "llm.plan.start session_id=%s execution_mode=%s text=%s task_slot_memory=%s current_task=%s",
             request.sessionId,
             request.executionMode,
             _truncate_for_log(request.txt, 300),
-            session.status,
-            session.slot_memory,
-            session.current_task.model_dump(mode="json") if session.current_task else None,
+            task_state.slot_memory,
+            task_state.current_task.model_dump(mode="json") if task_state.current_task else None,
         )
-        active_context = session.active_context if isinstance(session.active_context, dict) else {}
+        active_context = task_state.active_context if isinstance(task_state.active_context, dict) else {}
         loaded_skill_names = tuple(_string_list(active_context.get("skill_names")))
         requested_reference_ids = tuple(_string_list(active_context.get("reference_ids")))
         variables = {
             "message": request.txt,
             "execution_mode": request.executionMode,
-            "session_state_json": session.model_dump_json(exclude_none=True),
+            "task_state_json": task_state.model_dump_json(exclude_none=True),
             "recommend_task_json": json.dumps(request.recommendTask, ensure_ascii=False),
             "recent_messages_json": json.dumps(request.currentDisplay, ensure_ascii=False),
             "config_variables_json": json.dumps(
@@ -349,7 +348,7 @@ def _planner_output_schema_json() -> str:
             "如果缺少必填槽位，使用 status=waiting_user_input 和 completion_reason=router_waiting_user_input。",
             "如果 router_only 模式下必填槽位齐全，使用 status=ready_for_dispatch 和 completion_reason=router_ready_for_dispatch。",
             "只能使用已加载 skill 中声明的标准 intent_code，不要编造展示名或泛化标签。",
-            "当 session state 中存在等待中的活跃任务时，将短回复优先解释为该任务的槽位值，并保留已有 slot_memory。",
+            "当 task runtime state 中存在等待中的活跃任务时，将短回复优先解释为该任务的槽位值，并保留已有 slot_memory。",
             "如果已加载 skill 暴露了可用 reference 且确实需要更多上下文，将 requested_references 设置为允许的 reference id，status=running，completion_reason=router_reference_required。",
             "不要请求未在可用 Reference 摘要中列出的 reference id。",
         ],
@@ -450,7 +449,46 @@ def _planner_output_schema_json() -> str:
                 },
                 "message": "请提供转账金额",
                 "output": {},
-            }
+            },
+            "multi_transfer_missing_amounts": {
+                "mode": "multi_task",
+                "status": "waiting_user_input",
+                "completion_state": 0,
+                "completion_reason": "router_waiting_user_input",
+                "intent_code": "AG_TRANS",
+                "recognition": {
+                    "intent_code": "AG_TRANS",
+                },
+                "slot_memory": {"payee_name": "收款人甲"},
+                "task_list": [
+                    {
+                        "taskId": "task_001",
+                        "intent_code": "AG_TRANS",
+                        "status": "waiting_user_input",
+                        "title": "转账给收款人甲",
+                        "slot_memory": {"payee_name": "收款人甲"},
+                        "output": {},
+                    },
+                    {
+                        "taskId": "task_002",
+                        "intent_code": "AG_TRANS",
+                        "status": "waiting_user_input",
+                        "title": "转账给收款人乙",
+                        "slot_memory": {"payee_name": "收款人乙"},
+                        "output": {},
+                    },
+                ],
+                "current_task": {
+                    "taskId": "task_001",
+                    "intent_code": "AG_TRANS",
+                    "status": "waiting_user_input",
+                    "title": "转账给收款人甲",
+                    "slot_memory": {"payee_name": "收款人甲"},
+                    "output": {},
+                },
+                "message": "请提供第一笔转账金额",
+                "output": {},
+            },
         },
     }
     return json.dumps(schema, ensure_ascii=False)
@@ -496,7 +534,7 @@ def _record_prompt_trace(
         title=title,
         summary=(
             "system prompt 包含 surface 规则、agent 根指令、spec 上下文、"
-            "已加载 skill 和已加载 reference；human prompt 包含用户消息、session 状态和输出 schema"
+            "已加载 skill 和已加载 reference；human prompt 包含用户消息、任务运行态和输出 schema"
         ),
         data={
             "surface": prompt.surface,

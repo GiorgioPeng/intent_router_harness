@@ -139,21 +139,28 @@ class AssistantProtocolFrame(BaseModel):
 
 
 class SessionState(BaseModel):
-    """Persisted router session state."""
+    """Session lifecycle metadata.
+
+    Session is only an identity and idle-timeout boundary. It must not carry
+    task status, slot memory, or planner runtime state.
+    """
 
     session_id: str
     user_binding_id: str | None = None
-    status: AssistantStatus = "running"
-    completion_reason: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_active_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime | None = None
+
+
+class TaskRuntimeState(BaseModel):
+    """In-memory task runtime state owned by the router core."""
+
     slot_memory: dict[str, Any] = Field(default_factory=dict)
     task_list: list[PlannedTask] = Field(default_factory=list)
     current_task: PlannedTask | None = None
     graph: dict[str, Any] | None = None
     active_context: dict[str, Any] = Field(default_factory=dict)
     context_leases: list[dict[str, Any]] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    last_active_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    expires_at: datetime | None = None
 
 
 class AssistantTraceEvent(BaseModel):

@@ -29,6 +29,7 @@ references: [{"id": "ref_001", "path": "references/ref_001.md", "purpose": "AG_T
 - 如果 `AG_TRANS` 缺少任一必填槽位，返回 `status="waiting_user_input"` 和 `completion_reason="router_waiting_user_input"`。
 - 缺槽时保留已知槽位到 `slot_memory`，`output` 保持为空，只在 `message` 中询问缺失槽位。
 - 用户说“我要转账”且没有收款人和金额时，应识别 `AG_TRANS`，并同时询问收款人和金额。
+- 任务标题只是展示文本，不能代替槽位；凡是用户消息中已经明确给出的收款人或金额，都必须写入对应任务的 `slot_memory`。
 
 ## 槽位依据
 
@@ -44,6 +45,8 @@ references: [{"id": "ref_001", "path": "references/ref_001.md", "purpose": "AG_T
 - 必须保留当前任务已收集的槽位，只合并最新消息中有依据的新槽位。
 - 填完一个缺失槽位后，如果仍缺少其他必填槽位，继续保持 `waiting_user_input`。
 - 在 `router_only` 模式下，如果 `AG_TRANS` 的必填槽位都已齐全，返回 `ready_for_dispatch` 和必需的交接输出。
+- 多个 `AG_TRANS` 任务同时出现时，必须按用户表达片段分别归属槽位：如“先给收款人甲转账，再给收款人乙转账”应生成两个任务，第一任务 `slot_memory.payee_name="收款人甲"`，第二任务 `slot_memory.payee_name="收款人乙"`；如果金额缺失，只询问当前任务缺失的金额，不要再询问已明确的收款人。
+- 多任务场景的顶层 `slot_memory` 表示当前活跃任务槽位；每个任务自己的槽位必须放在该任务的 `task_list[].slot_memory` 中。
 
 ## 任务图规划
 
@@ -51,6 +54,7 @@ references: [{"id": "ref_001", "path": "references/ref_001.md", "purpose": "AG_T
 - 只有明确重复办理、多个独立目标、顺序关系或条件关系时，才生成多个节点。
 - 优先使用 `task_list` 和 `current_task` 表达规划结果。
 - 仅当存在依赖、顺序、图确认、取消或重规划语义时，才使用 `graph`。
+- 多任务串行推进时，同一时刻只有一个 `current_task`；顶层 `status` 应反映当前任务状态。当前任务缺槽时返回 `waiting_user_input`，后续任务可以保留为 `waiting_user_input`，等待轮到该任务再继续补槽或派发。
 - 每个图节点必须暴露标准业务 `intent_code`。
 - 不要用 `intent`、`intentCode`、`name` 或展示名代替 `intent_code`。
 - 条件阈值应放在边条件中，不要写入节点槽位。

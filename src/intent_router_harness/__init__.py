@@ -24,6 +24,7 @@ from intent_router_harness.contracts import (
     RouterMessageRequest,
     SessionState,
     TaskCompletionRequest,
+    TaskRuntimeState,
 )
 from intent_router_harness.service import (
     HarnessHealth,
@@ -87,6 +88,7 @@ __all__ = [
     "SurfaceSummary",
     "Variant",
     "TaskCompletionRequest",
+    "TaskRuntimeState",
     "binding_matches",
     "load_harness_spec",
     "load_prompt_harness",

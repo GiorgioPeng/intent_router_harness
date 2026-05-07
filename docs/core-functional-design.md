@@ -5,17 +5,17 @@
 当前服务的核心目标：
 
 ```text
-把一条用户消息，在同一 session 上，经过 spec + skill + LLM planner，
+把一条用户消息，带着独立任务运行态，经过 spec + skill + LLM planner，
 转成稳定的助手协议流式输出。
 ```
 
 核心公式：
 
 ```text
-Message + SessionState + Spec Surface + Progressive Skill
+Message + TaskRuntimeState + Spec Surface + Progressive Skill
   -> LLM Planner
   -> PlannerOutput
-  -> Session Reducer
+  -> Task Runtime Reducer
   -> SSE Frames
 ```
 
@@ -23,25 +23,27 @@ Message + SessionState + Spec Surface + Progressive Skill
 
 ```mermaid
 flowchart LR
-    Input["用户消息\nsessionId + txt + stream"] --> Context["上下文组装\n读取 SessionState"]
+    Input["用户消息\nsessionId + txt + stream"] --> Session["Session 生命周期\n身份绑定 + idle TTL"]
+    Session --> Context["上下文组装\n读取 TaskRuntimeState"]
     Context --> Surface["Spec Surface\n选择 task_planning"]
     Surface --> SkillMatch["Skill 渐进式匹配\nmetadata -> body"]
     SkillMatch --> Prompt["Prompt 组装\nsystem + human"]
     Prompt --> LLM["LLM Planner\n识别意图 / 提槽 / 决策状态"]
     LLM --> Validate["结构校验\nPlannerOutput"]
-    Validate --> Reduce["Session Reducer\n合并 slot_memory"]
+    Validate --> Reduce["Task Runtime Reducer\n合并 slot_memory"]
     Reduce --> Frames["协议帧生成\nrecognition frame + business frame"]
     Frames --> SSE["SSE 输出\nevent: message / done"]
 ```
 
 这个闭环里，服务代码不硬编码业务提槽规则。服务只负责：
 
-- 读 session
+- 读取 session 生命周期元数据
+- 读取任务运行态
 - 渲染 spec
 - 渐进式加载 skill
 - 调 LLM
 - 校验 LLM 输出
-- 合并状态
+- 合并任务运行态
 - 输出 SSE
 
 ## 核心对象
@@ -49,12 +51,13 @@ flowchart LR
 ```mermaid
 flowchart TB
     Request["RouterMessageRequest\nsessionId / txt / stream / executionMode / config_variables"] --> PlannerInput["Planner 输入"]
-    Session["SessionState\nstatus / slot_memory / task_list / current_task"] --> PlannerInput
+    Session["SessionState\nuser_binding_id / expires_at"] --> Runtime["TaskRuntimeState\nslot_memory / task_list / current_task"]
+    Runtime --> PlannerInput
     Spec["Harness Spec\nsurface / prompt / binding / output schema"] --> PlannerInput
     Skill["Skill Body\n领域规则 / 提槽规则 / handover 规则"] --> PlannerInput
     PlannerInput --> PlannerOutput["PlannerOutput\nmode / status / intent_code / slot_memory / task_list / current_task / output"]
     PlannerOutput --> Protocol["AssistantProtocolFrame\nSSE payload"]
-    PlannerOutput --> UpdatedSession["Updated SessionState"]
+    PlannerOutput --> UpdatedRuntime["Updated TaskRuntimeState"]
 ```
 
 ### Request
@@ -73,15 +76,26 @@ flowchart TB
 
 ### SessionState
 
-session 是多轮提槽的基础：
+session 只负责用户绑定和 30 分钟 idle TTL，不承载任务状态：
 
 ```json
 {
   "session_id": "demo_transfer_001",
-  "status": "waiting_user_input",
+  "user_binding_id": "C0001",
+  "expires_at": "2026-05-07T10:30:00Z"
+}
+```
+
+### TaskRuntimeState
+
+任务运行态才是多轮提槽和任务调度的核心输入：
+
+```json
+{
   "slot_memory": {
     "payee_name": "小明"
   },
+  "task_list": [],
   "current_task": {
     "taskId": "task_001",
     "intent_code": "AG_TRANS",
@@ -200,7 +214,7 @@ stateDiagram-v2
 AG_TRANS.required_slots = payee_name, amount
 短人名回复 -> payee_name
 数字/金额回复 -> amount
-保留 session 中已有槽位
+保留任务运行态中已有槽位
 缺槽 -> waiting_user_input
 槽齐 -> ready_for_dispatch
 ```
@@ -210,7 +224,7 @@ AG_TRANS.required_slots = payee_name, amount
 服务层不判断“小明是不是收款人”，只合并 LLM 输出：
 
 ```python
-slot_memory = dict(session.slot_memory)
+slot_memory = dict(task_runtime.slot_memory)
 slot_memory.update(plan.slot_memory)
 ```
 
@@ -335,4 +349,3 @@ failed
 
 5. **流式优先**
    主接口默认面向 SSE，非流式只是兼容模式。
-

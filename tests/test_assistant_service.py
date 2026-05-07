@@ -12,8 +12,8 @@ from intent_router_harness.contracts import (
     PlannerOutput,
     RecognitionPlan,
     RouterMessageRequest,
-    SessionState,
     TaskCompletionRequest,
+    TaskRuntimeState,
 )
 from intent_router_harness.regression import load_regression_suite, validate_step_transcript
 from intent_router_harness.server import create_server
@@ -31,7 +31,7 @@ class StaticPlanner:
     def plan_message(
         self,
         request: RouterMessageRequest,
-        session: SessionState,
+        task_state: TaskRuntimeState,
     ) -> PlannerOutput:
         return self.output
 
@@ -362,11 +362,11 @@ def test_assistant_service_saves_and_releases_context_lease(tmp_path: Path) -> N
             executionMode="router_only",
         )
     )
-    session = service.assistant.sessions.get_or_create("lease_session")
+    task_state = service.assistant.sessions.get_task_state("lease_session")
 
-    assert session.active_context["task_id"] == "task_transfer"
-    assert session.active_context["skill_names"] == ["finance-routing"]
-    assert session.active_context["reference_ids"] == ["ref_001"]
+    assert task_state.active_context["task_id"] == "task_transfer"
+    assert task_state.active_context["skill_names"] == ["finance-routing"]
+    assert task_state.active_context["reference_ids"] == ["ref_001"]
 
     service.handle_task_completion(
         TaskCompletionRequest(
@@ -377,7 +377,174 @@ def test_assistant_service_saves_and_releases_context_lease(tmp_path: Path) -> N
         )
     )
 
-    assert service.assistant.sessions.get_or_create("lease_session").active_context == {}
+    assert service.assistant.sessions.get_task_state("lease_session").active_context == {}
+
+
+def test_task_completion_advances_to_next_waiting_task(tmp_path: Path) -> None:
+    first_task = PlannedTask(
+        taskId="task_001",
+        intent_code="AG_TRANS",
+        status="ready_for_dispatch",
+        title="转账给王阳明",
+        slot_memory={"payee_name": "王阳明", "amount": "100"},
+    )
+    second_task = PlannedTask(
+        taskId="task_002",
+        intent_code="AG_TRANS",
+        status="waiting_user_input",
+        title="转账给李正义",
+        slot_memory={"payee_name": "李正义"},
+    )
+    service = IntentRouterHarnessService.from_spec(
+        _write_minimal_harness(tmp_path),
+        message_planner=StaticPlanner(
+            PlannerOutput(
+                mode="multi_task",
+                status="ready_for_dispatch",
+                completion_state=0,
+                completion_reason="router_ready_for_dispatch",
+                intent_code="AG_TRANS",
+                recognition=RecognitionPlan(intent_code="AG_TRANS"),
+                slot_memory={"payee_name": "王阳明", "amount": "100"},
+                task_list=[first_task, second_task],
+                current_task=first_task,
+                output={
+                    "ishandover": True,
+                    "handOverReason": "router_only_ready_for_dispatch",
+                },
+                diagnostics={
+                    "_router_context": {
+                        "agent_contexts": ["/tmp/agent.md"],
+                        "metadata_skills": ["finance-routing"],
+                        "skill_names": ["finance-routing"],
+                        "reference_ids": [],
+                    }
+                },
+            )
+        ),
+    )
+    assert service.assistant is not None
+
+    service.handle_message(
+        RouterMessageRequest(
+            sessionId="multi_completion_session",
+            txt="我要先给王阳明转账，再给李正义转账",
+            executionMode="router_only",
+        )
+    )
+    result = service.handle_task_completion(
+        TaskCompletionRequest(
+            sessionId="multi_completion_session",
+            taskId="task_001",
+            completionSignal=2,
+        )
+    )
+    saved = service.assistant.sessions.get_task_state("multi_completion_session")
+
+    assert [frame.status for frame in result.frames] == ["completed", "waiting_user_input"]
+    assert result.final_frame.current_task is not None
+    assert result.final_frame.current_task["taskId"] == "task_002"
+    assert result.final_frame.slot_memory == {"payee_name": "李正义"}
+    assert saved.current_task is not None
+    assert saved.current_task.taskId == "task_002"
+    assert saved.slot_memory == {"payee_name": "李正义"}
+    assert saved.active_context["task_id"] == "task_002"
+
+
+def test_current_task_status_is_not_downgraded_to_running(tmp_path: Path) -> None:
+    current_task = PlannedTask(
+        taskId="task_001",
+        intent_code="AG_TRANS",
+        status="waiting_user_input",
+        title="转账给王阳明",
+        slot_memory={"payee_name": "王阳明"},
+    )
+    service = IntentRouterHarnessService.from_spec(
+        _write_minimal_harness(tmp_path),
+        message_planner=StaticPlanner(
+            PlannerOutput(
+                mode="multi_task",
+                status="running",
+                completion_state=0,
+                completion_reason="router_waiting_user_input",
+                intent_code="AG_TRANS",
+                recognition=RecognitionPlan(intent_code="AG_TRANS"),
+                slot_memory={"payee_name": "王阳明"},
+                task_list=[
+                    current_task,
+                    PlannedTask(
+                        taskId="task_002",
+                        intent_code="AG_TRANS",
+                        status="waiting_user_input",
+                        title="转账给李正义",
+                        slot_memory={"payee_name": "李正义"},
+                    ),
+                ],
+                current_task=current_task,
+                message="请提供给王阳明的转账金额",
+            )
+        ),
+    )
+    assert service.assistant is not None
+
+    result = service.handle_message(
+        RouterMessageRequest(
+            sessionId="multi_status_session",
+            txt="我要先给王阳明转账，再给李正义转账",
+        )
+    )
+    saved = service.assistant.sessions.get_task_state("multi_status_session")
+
+    assert result.final_frame.status == "waiting_user_input"
+    assert result.final_frame.current_task is not None
+    assert result.final_frame.current_task["status"] == "waiting_user_input"
+    assert result.final_frame.current_task["slot_memory"] == {"payee_name": "王阳明"}
+    assert result.final_frame.task_list[0]["status"] == "waiting_user_input"
+    assert saved.current_task is not None
+    assert saved.current_task.status == "waiting_user_input"
+
+
+def test_current_task_slot_memory_updates_protocol_and_session(tmp_path: Path) -> None:
+    current_task = PlannedTask(
+        taskId="task_001",
+        intent_code="AG_TRANS",
+        status="ready_for_dispatch",
+        title="转账给王阳明",
+        slot_memory={"payee_name": "王阳明", "amount": "100"},
+    )
+    service = IntentRouterHarnessService.from_spec(
+        _write_minimal_harness(tmp_path),
+        message_planner=StaticPlanner(
+            PlannerOutput(
+                mode="slot_filling",
+                status="ready_for_dispatch",
+                completion_state=0,
+                completion_reason="router_ready_for_dispatch",
+                intent_code="AG_TRANS",
+                recognition=RecognitionPlan(intent_code="AG_TRANS"),
+                slot_memory={"payee_name": "王阳明"},
+                task_list=[current_task],
+                current_task=current_task,
+                output={
+                    "ishandover": True,
+                    "handOverReason": "router_only_ready_for_dispatch",
+                },
+            )
+        ),
+    )
+    assert service.assistant is not None
+
+    result = service.handle_message(
+        RouterMessageRequest(
+            sessionId="current_task_slots_session",
+            txt="100元",
+            executionMode="router_only",
+        )
+    )
+    saved = service.assistant.sessions.get_task_state("current_task_slots_session")
+
+    assert result.final_frame.slot_memory == {"payee_name": "王阳明", "amount": "100"}
+    assert saved.slot_memory == {"payee_name": "王阳明", "amount": "100"}
 
 
 def test_session_binds_to_single_user_and_rejects_mismatch(tmp_path: Path) -> None:
@@ -462,7 +629,7 @@ def test_session_expires_after_idle_timeout_and_clears_memory(tmp_path: Path) ->
             config_variables=[{"name": "cust_no", "value": "cust_001"}],
         )
     )
-    saved = service.assistant.sessions.get_or_create("expiring_session")
+    saved = service.assistant.sessions.get_task_state("expiring_session")
     assert saved.slot_memory == {"payee_name": "小明"}
     assert saved.context_leases
 
@@ -470,11 +637,11 @@ def test_session_expires_after_idle_timeout_and_clears_memory(tmp_path: Path) ->
     expired = service.assistant.sessions.load("expiring_session", user_binding_id="cust_001")
 
     assert expired.expired is True
-    assert expired.session.slot_memory == {}
-    assert expired.session.task_list == []
-    assert expired.session.current_task is None
-    assert expired.session.active_context == {}
-    assert expired.session.context_leases == []
+    assert expired.task_state.slot_memory == {}
+    assert expired.task_state.task_list == []
+    assert expired.task_state.current_task is None
+    assert expired.task_state.active_context == {}
+    assert expired.task_state.context_leases == []
 
 
 def test_task_completion_rejects_terminal_task_replay(tmp_path: Path) -> None:
