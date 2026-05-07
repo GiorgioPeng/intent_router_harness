@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from http.client import HTTPConnection
 import json
 from pathlib import Path
@@ -17,6 +18,7 @@ from intent_router_harness.contracts import (
 from intent_router_harness.regression import load_regression_suite, validate_step_transcript
 from intent_router_harness.server import create_server
 from intent_router_harness.service import IntentRouterHarnessService
+from intent_router_harness.session_store import InMemorySessionStore
 
 
 SUITE_PATH = "regressions/assistant_protocol_v0_5.json"
@@ -376,3 +378,146 @@ def test_assistant_service_saves_and_releases_context_lease(tmp_path: Path) -> N
     )
 
     assert service.assistant.sessions.get_or_create("lease_session").active_context == {}
+
+
+def test_session_binds_to_single_user_and_rejects_mismatch(tmp_path: Path) -> None:
+    task = PlannedTask(taskId="task_transfer", intent_code="AG_TRANS", status="waiting_user_input")
+    service = IntentRouterHarnessService.from_spec(
+        _write_minimal_harness(tmp_path),
+        message_planner=StaticPlanner(
+            PlannerOutput(
+                mode="slot_filling",
+                status="waiting_user_input",
+                completion_state=0,
+                completion_reason="router_waiting_user_input",
+                intent_code="AG_TRANS",
+                recognition=RecognitionPlan(intent_code="AG_TRANS"),
+                task_list=[task],
+                current_task=task,
+                message="请提供金额",
+            )
+        ),
+    )
+    assert service.assistant is not None
+
+    service.handle_message(
+        RouterMessageRequest(
+            sessionId="owned_session",
+            txt="我要转账",
+            custId="user_a",
+        )
+    )
+
+    try:
+        service.handle_message(
+            RouterMessageRequest(
+                sessionId="owned_session",
+                txt="我要转账",
+                custId="user_b",
+            )
+        )
+    except RuntimeError as exc:
+        assert "already bound" in str(exc)
+    else:
+        raise AssertionError("session user mismatch should be rejected")
+
+
+def test_session_expires_after_idle_timeout_and_clears_memory(tmp_path: Path) -> None:
+    now = datetime(2026, 5, 7, 10, 0, tzinfo=timezone.utc)
+
+    def clock() -> datetime:
+        return now
+
+    task = PlannedTask(taskId="task_transfer", intent_code="AG_TRANS", status="waiting_user_input")
+    service = IntentRouterHarnessService.from_spec(
+        _write_minimal_harness(tmp_path),
+        message_planner=StaticPlanner(
+            PlannerOutput(
+                mode="slot_filling",
+                status="waiting_user_input",
+                completion_state=0,
+                completion_reason="router_waiting_user_input",
+                intent_code="AG_TRANS",
+                recognition=RecognitionPlan(intent_code="AG_TRANS"),
+                slot_memory={"payee_name": "小明"},
+                task_list=[task],
+                current_task=task,
+                message="请提供金额",
+                diagnostics={
+                    "_router_context": {
+                        "skill_names": ["finance-routing"],
+                        "reference_ids": ["ref_001"],
+                    }
+                },
+            )
+        ),
+    )
+    assert service.assistant is not None
+    service.assistant.sessions = InMemorySessionStore(clock=clock)
+
+    service.handle_message(
+        RouterMessageRequest(
+            sessionId="expiring_session",
+            txt="给小明转账",
+            custId="user_a",
+        )
+    )
+    saved = service.assistant.sessions.get_or_create("expiring_session")
+    assert saved.slot_memory == {"payee_name": "小明"}
+    assert saved.context_leases
+
+    now = now + timedelta(minutes=31)
+    expired = service.assistant.sessions.load("expiring_session", user_id="user_a")
+
+    assert expired.expired is True
+    assert expired.session.slot_memory == {}
+    assert expired.session.task_list == []
+    assert expired.session.current_task is None
+    assert expired.session.active_context == {}
+    assert expired.session.context_leases == []
+
+
+def test_task_completion_rejects_terminal_task_replay(tmp_path: Path) -> None:
+    task = PlannedTask(
+        taskId="task_transfer",
+        intent_code="AG_TRANS",
+        status="waiting_assistant_completion",
+        output={"message": "done"},
+    )
+    service = IntentRouterHarnessService.from_spec(
+        _write_minimal_harness(tmp_path),
+        message_planner=StaticPlanner(
+            PlannerOutput(
+                mode="single_task",
+                status="waiting_assistant_completion",
+                completion_state=1,
+                completion_reason="assistant_confirmation_required",
+                intent_code="AG_TRANS",
+                recognition=RecognitionPlan(intent_code="AG_TRANS"),
+                task_list=[task],
+                current_task=task,
+                output={"message": "done"},
+            )
+        ),
+    )
+    assert service.assistant is not None
+
+    service.handle_message(RouterMessageRequest(sessionId="replay_session", txt="给小明转账200"))
+    first = service.handle_task_completion(
+        TaskCompletionRequest(
+            sessionId="replay_session",
+            taskId="task_transfer",
+            completionSignal=2,
+        )
+    )
+    second = service.handle_task_completion(
+        TaskCompletionRequest(
+            sessionId="replay_session",
+            taskId="task_transfer",
+            completionSignal=2,
+        )
+    )
+
+    assert first.final_frame.status == "completed"
+    assert second.final_frame.ok is False
+    assert second.final_frame.errorCode == "TASK_ALREADY_TERMINAL"

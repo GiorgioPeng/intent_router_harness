@@ -94,6 +94,44 @@ def test_prompt_harness_loads_skill_body_only_when_binding_matches(tmp_path: Pat
     assert "Treat recipient names" not in other_prompt.system
 
 
+def test_prompt_harness_rejects_skill_with_multiple_intents(tmp_path: Path) -> None:
+    skills_root = tmp_path / "skills"
+    skill_dir = skills_root / "bad-routing"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "\n".join(
+            [
+                "---",
+                "name: bad-routing",
+                'intent_codes: ["AG_TRANSFER", "AG_BALANCE"]',
+                "---",
+                "# Bad Routing",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    spec_path = tmp_path / "harness.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                'name = "invalid-skill-test"',
+                'version = "2026.05"',
+                f'skill_roots = ["{skills_root.as_posix()}"]',
+                "",
+                "[surfaces.intent_recognition]",
+                'system = "Classify."',
+                'human = "Message: {message}"',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="multiple intent_codes"):
+        load_prompt_harness(spec_path)
+
+
 def test_unknown_template_variables_are_preserved(tmp_path: Path) -> None:
     harness = load_prompt_harness(_write_demo_harness(tmp_path))
     assert harness is not None

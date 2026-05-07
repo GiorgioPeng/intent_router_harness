@@ -62,6 +62,7 @@ class SkillLibrary:
                 if not skill_path.is_file():
                     continue
                 skill = load_skill_document(skill_path)
+                validate_skill_intent_contract(skill)
                 skills[skill.name] = skill
                 logger.info(
                     "loaded skill name=%s path=%s surfaces=%s intent_codes=%s domain_codes=%s capabilities=%s",
@@ -73,6 +74,7 @@ class SkillLibrary:
                     list(skill.capabilities),
                 )
         logger.info("loaded skill library skill_count=%d skills=%s", len(skills), sorted(skills))
+        validate_unique_intent_bindings(skills)
         return cls(skills)
 
     def get(self, name: str) -> SkillDocument | None:
@@ -120,6 +122,27 @@ def load_skill_document(path: Path) -> SkillDocument:
     )
 
 
+def validate_skill_intent_contract(skill: SkillDocument) -> None:
+    """Enforce one dispatchable intent per skill when intent metadata is declared."""
+    if len(skill.intent_codes) > 1:
+        raise ValueError(
+            f"skill {skill.name!r} declares multiple intent_codes; one skill must map to one intent"
+        )
+
+
+def validate_unique_intent_bindings(skills: dict[str, SkillDocument]) -> None:
+    """Enforce that one declared intent is not owned by multiple skills."""
+    owners: dict[str, str] = {}
+    for skill in skills.values():
+        for intent_code in skill.intent_codes:
+            owner = owners.get(intent_code)
+            if owner is not None and owner != skill.name:
+                raise ValueError(
+                    f"intent_code {intent_code!r} is declared by both {owner!r} and {skill.name!r}"
+                )
+            owners[intent_code] = skill.name
+
+
 def split_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     """Split minimal YAML-like frontmatter from Markdown content."""
     lines = content.splitlines()
@@ -162,7 +185,7 @@ def skill_matches(
     """Return whether skill metadata applies to the current harness context."""
     if skill.surfaces and surface not in skill.surfaces:
         return False
-    if skill.intent_codes and not set(skill.intent_codes).intersection(intent_codes):
+    if intent_codes and skill.intent_codes and not set(skill.intent_codes).intersection(intent_codes):
         return False
     if skill.domain_codes and not set(skill.domain_codes).intersection(domain_codes):
         return False

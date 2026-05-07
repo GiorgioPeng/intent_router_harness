@@ -1,7 +1,8 @@
 ---
 name: finance-routing
-description: "Finance routing rules for transfer/remittance, repayment, balance query, bill payment, foreign exchange, slot filling, and graph planning."
+description: "Finance transfer/remittance routing rules for AG_TRANS slot filling and handoff."
 surfaces: ["scene_selection", "intent_recognition", "slot_extraction", "graph_planning", "task_planning"]
+intent_codes: ["AG_TRANS"]
 domain_codes: ["finance"]
 capabilities: ["routing", "slots", "graph", "planning"]
 references: [{"id": "ref_001", "path": "references/ref_001.md", "purpose": "Detailed AG_TRANS slot and router-only handoff constraints"}]
@@ -9,18 +10,18 @@ references: [{"id": "ref_001", "path": "references/ref_001.md", "purpose": "Deta
 
 # Finance Routing
 
-Use this skill when the active candidates belong to the finance domain.
+Use this skill when the active candidate is the transfer/remittance intent `AG_TRANS`.
 
 ## Intent Boundaries
 
-- A single transfer, repayment, balance query, gas bill payment, or foreign exchange action is one business intent.
+- A single transfer or remittance action is one business intent.
 - Recipient, amount, account number, card suffix, currency, bill period, and similar values are slots.
-- Do not split one business action into extra intents only because multiple slot values appear.
+- Do not split one transfer action into extra intents only because multiple slot values appear.
 - Multiple intents require explicit independent actions, sequencing, parallelism, or conditions.
 - If the user cancels the active finance action during slot filling, end the active node with `assistant_cancel` instead of continuing to request old slots.
 - If the user switches to a new finance goal during slot filling, replan around the new goal instead of stuffing the new utterance into the old slot schema.
 
-## Canonical Finance Intents
+## Canonical Finance Intent
 
 - Use `AG_TRANS` for transfer/remittance requests such as "转账", "汇款", "给某人转钱", or "我要转账".
 - Do not output generic labels such as `transfer`, `payment`, or Chinese display names as `intent_code`.

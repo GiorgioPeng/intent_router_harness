@@ -11,17 +11,14 @@ from pydantic import ValidationError
 from intent_router_harness.contracts import RouterMessageRequest, TaskCompletionRequest
 from intent_router_harness.llm import (
     LLMConfigurationError,
-    LLMRequestError,
     OpenAICompatibleLLMClient,
     load_llm_settings,
 )
 from intent_router_harness.service import (
     IntentRouterHarnessService,
-    RegressionValidationRequest,
-    RenderLLMRequest,
-    RenderPromptRequest,
     ServiceConfigurationError,
 )
+from intent_router_harness.session_store import SessionOwnershipError
 
 
 def create_server(
@@ -70,51 +67,16 @@ class _HarnessRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
-        if path == "/health":
-            self._write_model(200, self.harness_service.health())
+        if path == "/healthz":
+            self._write_json(200, {"status": "ok"})
             return
-        if path == "/surfaces":
+        if path == "/readyz":
             self._write_json(
                 200,
                 {
-                    "surfaces": [
-                        surface.model_dump(mode="json")
-                        for surface in self.harness_service.surfaces()
-                    ]
-                },
-            )
-            return
-        if path == "/regression/suite":
-            try:
-                self._write_model(200, self.harness_service.regression_summary())
-            except ServiceConfigurationError as exc:
-                self._write_error(503, "regression_suite_not_loaded", str(exc))
-            return
-        if path.startswith("/regression/cases/"):
-            case_id = path.removeprefix("/regression/cases/")
-            try:
-                self._write_model(200, self.harness_service.regression_case(case_id))
-            except ServiceConfigurationError as exc:
-                self._write_error(503, "regression_suite_not_loaded", str(exc))
-            except KeyError:
-                self._write_error(404, "regression_case_not_found", case_id)
-            return
-        if path == "/":
-            self._write_json(
-                200,
-                {
+                    "ready": True,
                     "service": "intent_router_harness",
-                    "endpoints": [
-                        "GET /health",
-                        "GET /surfaces",
-                        "POST /render",
-                        "POST /llm/render",
-                        "POST /api/v1/message",
-                        "POST /api/v1/task/completion",
-                        "GET /regression/suite",
-                        "GET /regression/cases/{case_id}",
-                        "POST /regression/validate",
-                    ],
+                    "llm_configured": self.harness_service.llm_client is not None,
                 },
             )
             return
@@ -134,6 +96,9 @@ class _HarnessRequestHandler(BaseHTTPRequestHandler):
                 return
             except ServiceConfigurationError as exc:
                 self._write_request_error(payload, 503, "assistant_not_configured", str(exc))
+                return
+            except SessionOwnershipError as exc:
+                self._write_request_error(payload, 403, "session_user_mismatch", str(exc))
                 return
 
             self._write_assistant_result(
@@ -156,6 +121,9 @@ class _HarnessRequestHandler(BaseHTTPRequestHandler):
             except ServiceConfigurationError as exc:
                 self._write_request_error(payload, 503, "assistant_not_configured", str(exc))
                 return
+            except SessionOwnershipError as exc:
+                self._write_request_error(payload, 403, "session_user_mismatch", str(exc))
+                return
 
             self._write_assistant_result(
                 request.stream,
@@ -164,70 +132,7 @@ class _HarnessRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if path == "/regression/validate":
-            payload = self._read_json_body()
-            if payload is None:
-                return
-            try:
-                request = RegressionValidationRequest.model_validate(payload)
-                response = self.harness_service.validate_regression(request)
-            except ValidationError as exc:
-                self._write_error(400, "validation_error", exc.errors())
-                return
-            except ServiceConfigurationError as exc:
-                self._write_error(503, "regression_suite_not_loaded", str(exc))
-                return
-
-            self._write_model(200 if response.ok else 422, response)
-            return
-
-        if path == "/llm/render":
-            payload = self._read_json_body()
-            if payload is None:
-                return
-            try:
-                request = RenderLLMRequest.model_validate(payload)
-                response = self.harness_service.render_llm(request)
-            except ValidationError as exc:
-                self._write_request_error(payload, 400, "validation_error", exc.errors())
-                return
-            except KeyError as exc:
-                self._write_request_error(payload, 400, "unknown_surface", str(exc))
-                return
-            except ServiceConfigurationError as exc:
-                self._write_request_error(payload, 503, "llm_not_configured", str(exc))
-                return
-            except LLMRequestError as exc:
-                self._write_request_error(payload, 502, "llm_request_failed", str(exc))
-                return
-
-            if request.stream:
-                self._write_sse_message(response.model_dump(mode="json"))
-                return
-            self._write_model(200, response)
-            return
-
-        if path != "/render":
-            self._write_error(404, "not_found", f"unknown endpoint: {path}")
-            return
-
-        payload = self._read_json_body()
-        if payload is None:
-            return
-        try:
-            request = RenderPromptRequest.model_validate(payload)
-            response = self.harness_service.render(request)
-        except ValidationError as exc:
-            self._write_request_error(payload, 400, "validation_error", exc.errors())
-            return
-        except KeyError as exc:
-            self._write_request_error(payload, 400, "unknown_surface", str(exc))
-            return
-
-        if request.stream:
-            self._write_sse_message(response.model_dump(mode="json"))
-            return
-        self._write_model(200, response)
+        self._write_error(404, "not_found", f"unknown endpoint: {path}")
 
     def log_message(self, format: str, *args: Any) -> None:
         """Keep test output and local service logs quiet by default."""

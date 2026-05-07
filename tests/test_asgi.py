@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
-from fastapi.testclient import TestClient
+import httpx
 
 from intent_router_harness.asgi import create_app
 from intent_router_harness.config import AppSettings
@@ -51,31 +52,35 @@ def _write_minimal_harness(tmp_path: Path) -> Path:
     return spec_path
 
 
-def test_asgi_health_ready_and_render(tmp_path: Path) -> None:
+def test_asgi_health_ready_and_aux_routes_are_not_exposed(tmp_path: Path) -> None:
     settings = AppSettings(
         spec_path=_write_minimal_harness(tmp_path),
         regression_suite_path=None,
         llm_env_file=None,
     )
     app = create_app(settings)
-    client = TestClient(app)
 
-    healthz = client.get("/healthz")
-    readyz = client.get("/readyz")
-    render = client.post(
-        "/render",
-        json={
-            "surface": "intent_recognition",
-            "variables": {"message": "hello"},
-        },
-    )
+    async def run() -> tuple[httpx.Response, httpx.Response, httpx.Response]:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            healthz = await client.get("/healthz")
+            readyz = await client.get("/readyz")
+            render = await client.post(
+                "/render",
+                json={
+                    "surface": "intent_recognition",
+                    "variables": {"message": "hello"},
+                },
+            )
+            return healthz, readyz, render
+
+    healthz, readyz, render = asyncio.run(run())
 
     assert healthz.status_code == 200
     assert healthz.json() == {"status": "ok"}
     assert readyz.status_code == 200
     assert readyz.json()["llm_configured"] is False
-    assert render.status_code == 200
-    assert render.json()["messages"][1]["content"] == "Message: hello"
+    assert render.status_code == 404
 
 
 def test_asgi_message_stream_uses_assistant_protocol_service(tmp_path: Path) -> None:
@@ -107,17 +112,21 @@ def test_asgi_message_stream_uses_assistant_protocol_service(tmp_path: Path) -> 
         AppSettings(spec_path=_write_minimal_harness(tmp_path), regression_suite_path=None),
         service=service,
     )
-    client = TestClient(app)
 
-    response = client.post(
-        "/api/v1/message",
-        json={
-            "sessionId": "asgi_session_001",
-            "txt": "给小明转账200",
-            "stream": True,
-            "executionMode": "router_only",
-        },
-    )
+    async def run() -> httpx.Response:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            return await client.post(
+                "/api/v1/message",
+                json={
+                    "sessionId": "asgi_session_001",
+                    "txt": "给小明转账200",
+                    "stream": True,
+                    "executionMode": "router_only",
+                },
+            )
+
+    response = asyncio.run(run())
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")

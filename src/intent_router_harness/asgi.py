@@ -8,7 +8,7 @@ from threading import Thread
 from typing import Any, Iterable
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from intent_router_harness.config import AppSettings
 from intent_router_harness.contracts import (
     AssistantServiceResult,
@@ -16,15 +16,12 @@ from intent_router_harness.contracts import (
     RouterMessageRequest,
     TaskCompletionRequest,
 )
-from intent_router_harness.llm import LLMRequestError
 from intent_router_harness.service import (
     IntentRouterHarnessService,
-    RegressionValidationRequest,
-    RenderLLMRequest,
-    RenderPromptRequest,
     ServiceConfigurationError,
 )
 from intent_router_harness.service_factory import build_service
+from intent_router_harness.session_store import SessionOwnershipError
 from intent_router_harness.trace import trace_sink
 
 logger = logging.getLogger(__name__)
@@ -72,41 +69,7 @@ def create_app(
             "ready": True,
             "service": "intent_router_harness",
             "llm_configured": resolved_service.llm_client is not None,
-            "regression_suite_loaded": resolved_service.regression_suite is not None,
-            "surfaces": resolved_service.health().surfaces,
         }
-
-    @app.get("/health")
-    def health() -> dict[str, Any]:
-        return resolved_service.health().model_dump(mode="json")
-
-    @app.get("/surfaces")
-    def surfaces() -> dict[str, Any]:
-        return {"surfaces": [surface.model_dump(mode="json") for surface in resolved_service.surfaces()]}
-
-    @app.post("/render")
-    def render(request: RenderPromptRequest):
-        try:
-            response = resolved_service.render(request)
-        except KeyError as exc:
-            raise HTTPException(status_code=400, detail={"code": "unknown_surface", "message": str(exc)}) from exc
-        if request.stream:
-            return _sse_response([response.model_dump(mode="json")])
-        return response.model_dump(mode="json")
-
-    @app.post("/llm/render")
-    def llm_render(request: RenderLLMRequest):
-        try:
-            response = resolved_service.render_llm(request)
-        except KeyError as exc:
-            raise HTTPException(status_code=400, detail={"code": "unknown_surface", "message": str(exc)}) from exc
-        except ServiceConfigurationError as exc:
-            raise HTTPException(status_code=503, detail={"code": "llm_not_configured", "message": str(exc)}) from exc
-        except LLMRequestError as exc:
-            raise HTTPException(status_code=502, detail={"code": "llm_request_failed", "message": str(exc)}) from exc
-        if request.stream:
-            return _sse_response([response.model_dump(mode="json")])
-        return response.model_dump(mode="json")
 
     @app.post("/api/v1/message")
     def message(request: RouterMessageRequest):
@@ -116,6 +79,8 @@ def create_app(
             result = resolved_service.handle_message(request)
         except ServiceConfigurationError as exc:
             raise HTTPException(status_code=503, detail={"code": "assistant_not_configured", "message": str(exc)}) from exc
+        except SessionOwnershipError as exc:
+            raise HTTPException(status_code=403, detail={"code": "session_user_mismatch", "message": str(exc)}) from exc
         payloads = [frame.protocol_dump() for frame in result.frames]
         if request.stream:
             trace_payloads = (
@@ -134,6 +99,8 @@ def create_app(
             result = resolved_service.handle_task_completion(request)
         except ServiceConfigurationError as exc:
             raise HTTPException(status_code=503, detail={"code": "assistant_not_configured", "message": str(exc)}) from exc
+        except SessionOwnershipError as exc:
+            raise HTTPException(status_code=403, detail={"code": "session_user_mismatch", "message": str(exc)}) from exc
         payloads = [frame.protocol_dump() for frame in result.frames]
         if request.stream:
             trace_payloads = (
@@ -143,43 +110,6 @@ def create_app(
             )
             return _sse_response(payloads, trace_payloads=trace_payloads)
         return payloads[-1] if payloads else {}
-
-    @app.get("/regression/suite")
-    def regression_suite() -> dict[str, Any]:
-        try:
-            return resolved_service.regression_summary().model_dump(mode="json")
-        except ServiceConfigurationError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail={"code": "regression_suite_not_loaded", "message": str(exc)},
-            ) from exc
-
-    @app.get("/regression/cases/{case_id}")
-    def regression_case(case_id: str) -> dict[str, Any]:
-        try:
-            return resolved_service.regression_case(case_id).model_dump(mode="json")
-        except ServiceConfigurationError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail={"code": "regression_suite_not_loaded", "message": str(exc)},
-            ) from exc
-        except KeyError as exc:
-            raise HTTPException(
-                status_code=404,
-                detail={"code": "regression_case_not_found", "message": case_id},
-            ) from exc
-
-    @app.post("/regression/validate")
-    def regression_validate(request: RegressionValidationRequest):
-        try:
-            response = resolved_service.validate_regression(request)
-        except ServiceConfigurationError as exc:
-            raise HTTPException(
-                status_code=503,
-                detail={"code": "regression_suite_not_loaded", "message": str(exc)},
-            ) from exc
-        status_code = 200 if response.ok else 422
-        return JSONResponse(status_code=status_code, content=response.model_dump(mode="json"))
 
     return app
 

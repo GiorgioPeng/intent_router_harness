@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -141,6 +142,7 @@ class SessionState(BaseModel):
     """Persisted router session state."""
 
     session_id: str
+    user_id: str | None = None
     status: AssistantStatus = "running"
     completion_reason: str = ""
     slot_memory: dict[str, Any] = Field(default_factory=dict)
@@ -148,6 +150,10 @@ class SessionState(BaseModel):
     current_task: PlannedTask | None = None
     graph: dict[str, Any] | None = None
     active_context: dict[str, Any] = Field(default_factory=dict)
+    context_leases: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_active_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime | None = None
 
 
 class AssistantTraceEvent(BaseModel):

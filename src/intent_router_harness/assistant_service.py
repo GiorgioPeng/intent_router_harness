@@ -59,10 +59,15 @@ class AssistantProtocolService:
             request.executionMode,
             _truncate_for_log(request.txt, 300),
         )
-        session = self.sessions.get_or_create(request.sessionId)
+        user_id = _request_user_id(request)
+        session_load = self.sessions.load(request.sessionId, user_id=user_id)
+        session = session_load.session
         logger.info(
-            "core.session.loaded session_id=%s status=%s completion_reason=%s slot_memory=%s current_task=%s task_count=%d active_context=%s",
+            "core.session.loaded session_id=%s user_id=%s expired=%s user_bound=%s status=%s completion_reason=%s slot_memory=%s current_task=%s task_count=%d active_context=%s",
             request.sessionId,
+            session.user_id,
+            session_load.expired,
+            session_load.user_bound,
             session.status,
             session.completion_reason,
             _json_for_log(session.slot_memory, 1000),
@@ -78,6 +83,10 @@ class AssistantProtocolService:
                     summary=f"status={session.status}，task_count={len(session.task_list)}",
                     data={
                         "session_id": session.session_id,
+                        "user_id": session.user_id,
+                        "expired": session_load.expired,
+                        "user_bound": session_load.user_bound,
+                        "expires_at": session.expires_at.isoformat() if session.expires_at else None,
                         "status": session.status,
                         "completion_reason": session.completion_reason,
                         "slot_memory": session.slot_memory,
@@ -86,10 +95,37 @@ class AssistantProtocolService:
                         if session.current_task
                         else None,
                         "active_context": session.active_context,
+                        "context_leases": session.context_leases,
                     },
                 )
             )
             emit_trace(trace_events[-1])
+            if session_load.user_bound:
+                trace_events.append(
+                    AssistantTraceEvent(
+                        stage="session_user_bound",
+                        title="Session用户绑定",
+                        summary=f"session={request.sessionId} 已绑定用户",
+                        data={
+                            "session_id": request.sessionId,
+                            "user_id": session.user_id,
+                        },
+                    )
+                )
+                emit_trace(trace_events[-1])
+            if session_load.expired:
+                trace_events.append(
+                    AssistantTraceEvent(
+                        stage="session_memory_cleared",
+                        title="Session过期清理",
+                        summary="旧 session 已过期，已清理槽位、任务和上下文引用",
+                        data={
+                            "session_id": request.sessionId,
+                            "user_id": session.user_id,
+                        },
+                    )
+                )
+                emit_trace(trace_events[-1])
         try:
             plan = self.planner.plan_message(request, session)
         except PlannerError as exc:
@@ -317,10 +353,13 @@ class AssistantProtocolService:
             request.completionSignal,
             request.stream,
         )
-        session = self.sessions.get_or_create(request.sessionId)
+        session_load = self.sessions.load(request.sessionId)
+        session = session_load.session
         logger.info(
-            "core.session.loaded session_id=%s status=%s completion_reason=%s slot_memory=%s current_task=%s task_count=%d active_context=%s",
+            "core.session.loaded session_id=%s user_id=%s expired=%s status=%s completion_reason=%s slot_memory=%s current_task=%s task_count=%d active_context=%s",
             request.sessionId,
+            session.user_id,
+            session_load.expired,
             session.status,
             session.completion_reason,
             _json_for_log(session.slot_memory, 1000),
@@ -336,6 +375,9 @@ class AssistantProtocolService:
                     summary=f"status={session.status}，task_count={len(session.task_list)}",
                     data={
                         "session_id": session.session_id,
+                        "user_id": session.user_id,
+                        "expired": session_load.expired,
+                        "expires_at": session.expires_at.isoformat() if session.expires_at else None,
                         "status": session.status,
                         "completion_reason": session.completion_reason,
                         "slot_memory": session.slot_memory,
@@ -344,10 +386,44 @@ class AssistantProtocolService:
                         if session.current_task
                         else None,
                         "active_context": session.active_context,
+                        "context_leases": session.context_leases,
                     },
                 )
             )
             emit_trace(trace_events[-1])
+            if session_load.expired:
+                trace_events.append(
+                    AssistantTraceEvent(
+                        stage="session_memory_cleared",
+                        title="Session过期清理",
+                        summary="旧 session 已过期，已清理槽位、任务和上下文引用",
+                        data={
+                            "session_id": request.sessionId,
+                            "user_id": session.user_id,
+                        },
+                    )
+                )
+                emit_trace(trace_events[-1])
+        original_context = session.active_context
+        existing_task = next((task for task in session.task_list if task.taskId == request.taskId), None)
+        if existing_task is None:
+            return _failed_completion_result(
+                request,
+                session,
+                trace_events,
+                completion_reason="assistant_task_not_found",
+                error_code="TASK_NOT_FOUND",
+                message=f"taskId {request.taskId!r} does not exist in session",
+            )
+        if existing_task.status in {"completed", "cancelled", "failed"}:
+            return _failed_completion_result(
+                request,
+                session,
+                trace_events,
+                completion_reason="assistant_task_already_terminal",
+                error_code="TASK_ALREADY_TERMINAL",
+                message=f"taskId {request.taskId!r} is already {existing_task.status}",
+            )
         task_list = [
             task.model_copy(update={"status": "completed"})
             if task.taskId == request.taskId and request.completionSignal == 2
@@ -400,9 +476,8 @@ class AssistantProtocolService:
                 "completion_reason": frames[-1].completion_reason,
                 "task_list": task_list,
                 "current_task": current_task,
-                "active_context": session.active_context
-                if not (request.completionSignal == 2 and next_task is None)
-                else {},
+                "active_context": session.active_context if request.completionSignal != 2 else {},
+                "context_leases": session.context_leases if request.completionSignal != 2 else [],
             },
             deep=True,
         )
@@ -424,7 +499,7 @@ class AssistantProtocolService:
             len(updated_session.task_list),
             _json_for_log(updated_session.active_context, 1000),
         )
-        if request.debugTrace and session.active_context and not updated_session.active_context:
+        if request.debugTrace and original_context and not updated_session.active_context:
             trace_events.append(
                 AssistantTraceEvent(
                     stage="context_released",
@@ -433,7 +508,7 @@ class AssistantProtocolService:
                     data={
                         "session_id": request.sessionId,
                         "task_id": request.taskId,
-                        "released_context": session.active_context,
+                        "released_context": original_context,
                     },
                 )
             )
@@ -494,6 +569,7 @@ def _apply_plan(session: SessionState, plan: PlannerOutput) -> SessionState:
     slot_memory = dict(session.slot_memory)
     slot_memory.update(plan.slot_memory)
     active_context = _context_lease(session, plan, current_task)
+    context_leases = [active_context] if active_context else []
     return session.model_copy(
         update={
             "status": plan.status,
@@ -503,6 +579,7 @@ def _apply_plan(session: SessionState, plan: PlannerOutput) -> SessionState:
             "current_task": current_task,
             "graph": plan.graph,
             "active_context": active_context,
+            "context_leases": context_leases,
         },
         deep=True,
     )
@@ -581,6 +658,56 @@ def _effective_intent_code(plan: PlannerOutput) -> str | None:
     if plan.recognition is not None:
         return plan.recognition.intent_code
     return None
+
+
+def _request_user_id(request: RouterMessageRequest) -> str | None:
+    if request.custId:
+        return request.custId
+    for item in request.config_variables:
+        if item.name in {"user_id", "userId", "cust_id", "custId", "custID"} and item.value is not None:
+            if str(item.value).strip() == "":
+                continue
+            return str(item.value)
+    return None
+
+
+def _failed_completion_result(
+    request: TaskCompletionRequest,
+    session: SessionState,
+    trace_events: list[AssistantTraceEvent],
+    *,
+    completion_reason: str,
+    error_code: str,
+    message: str,
+) -> AssistantServiceResult:
+    frame = AssistantProtocolFrame(
+        ok=False,
+        status="failed",
+        completion_state=2,
+        completion_reason=completion_reason,
+        errorCode=error_code,
+        message=message,
+        slot_memory=session.slot_memory,
+        task_list=[task.model_dump(mode="json") for task in session.task_list],
+        current_task=session.current_task.model_dump(mode="json") if session.current_task else None,
+        graph=session.graph,
+    )
+    if request.debugTrace:
+        trace_events.append(
+            AssistantTraceEvent(
+                stage="task_completion_rejected",
+                title="任务完成回调被拒绝",
+                summary=message,
+                data={
+                    "session_id": request.sessionId,
+                    "task_id": request.taskId,
+                    "completion_reason": completion_reason,
+                    "error_code": error_code,
+                },
+            )
+        )
+        emit_trace(trace_events[-1])
+    return AssistantServiceResult(frames=[frame], trace_events=trace_events)
 
 
 def _trace_events_from_plan(plan: PlannerOutput) -> list[AssistantTraceEvent]:
