@@ -1,27 +1,44 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "intent-router-harness"
+name = "agentscope-router-intent"
 version = "0.1.0"
-description = "Standalone spec-driven harness for intent routing experiments."
-requires-python = ">=3.11"
+description = "Deterministic intent router with progressive skill context loading on AgentScope."
+readme = "README.md"
+requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.115",
-  "pydantic>=2.0",
-  "pydantic-settings>=2.0",
-  "uvicorn[standard]>=0.30",
+  "agentscope>=1.0.18,<2.0.0",
+  "fastapi>=0.115.0",
+  "httpx>=0.27.0",
+  "orjson>=3.10.0",
+  "pydantic>=2.8.0",
+  "pydantic-settings>=2.4.0",
+  "redis>=5.0.0",
+  "sse-starlette>=2.1.0",
+  "uvicorn[standard]>=0.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+  "pytest-asyncio>=0.23.0",
+  "respx>=0.21.0",
 ]
 
 [project.scripts]
-intent-router-harness = "intent_router_harness.__main__:main"
+router-app = "router_app.main:run"
 
-[project.optional-dependencies]
-test = [
-  "pytest>=8.0",
-]
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+addopts = "-q"
+asyncio_mode = "auto"
 pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
