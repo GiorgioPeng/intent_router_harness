@@ -16,7 +16,7 @@ from typing import Any, Iterator
 
 DEFAULT_BASE_URL = os.getenv("INTENT_ROUTER_BASE_URL", "http://127.0.0.1:8765")
 # DEFAULT_BASE_URL = os.getenv("INTENT_ROUTER_BASE_URL", "http://ai.intent-router.cc")
-DEFAULT_CUST_NO = "C0001"
+DEFAULT_CUST_ID = "C0001"
 DEFAULT_CURRENT_DISPLAY = "transfer_page"
 DEFAULT_TIMEOUT_SECONDS = 180
 DEFAULT_SESSION_ID_PREFIX = "mock_assistant"
@@ -43,19 +43,15 @@ def build_assistant_to_router_payload(
     session_id: str,
     txt: str,
     current_display: str = DEFAULT_CURRENT_DISPLAY,
-    cust_no: str = DEFAULT_CUST_NO,
+    cust_id: str = DEFAULT_CUST_ID,
     execution_mode: str = "router_only",
-    agent_session_id: str | None = None,
     stream: bool = True,
     debug_trace: bool = True,
     slots_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the same payload shape assistant-service forwards to router."""
     config_variables: list[dict[str, Any]] = [
-        {"name": "cust_no", "value": cust_no},
-        {"name": "sessionID", "value": session_id},
         {"name": "currentDisplay", "value": current_display},
-        {"name": "agentSessionID", "value": agent_session_id or session_id},
     ]
     if slots_data:
         config_variables.append(
@@ -68,6 +64,7 @@ def build_assistant_to_router_payload(
     return {
         "sessionId": session_id,
         "txt": txt,
+        "custID": cust_id,
         "config_variables": config_variables,
         "executionMode": execution_mode,
         "stream": stream,
@@ -193,9 +190,8 @@ def run_one_turn(
     txt: str,
     current_display: str = DEFAULT_CURRENT_DISPLAY,
     base_url: str = DEFAULT_BASE_URL,
-    cust_no: str = DEFAULT_CUST_NO,
+    cust_id: str = DEFAULT_CUST_ID,
     execution_mode: str = "router_only",
-    agent_session_id: str | None = None,
     stream: bool = True,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     slots_data: dict[str, Any] | None = None,
@@ -211,9 +207,8 @@ def run_one_turn(
         session_id=resolved_session_id,
         txt=txt,
         current_display=current_display,
-        cust_no=cust_no,
+        cust_id=cust_id,
         execution_mode=execution_mode,
-        agent_session_id=agent_session_id,
         stream=stream,
         debug_trace=debug_trace,
         slots_data=slots_data,
@@ -293,14 +288,13 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_CURRENT_DISPLAY,
         help=f"Assistant currentDisplay. Default: {DEFAULT_CURRENT_DISPLAY}",
     )
-    parser.add_argument("--cust-no", default=DEFAULT_CUST_NO, help=f"cust_no. Default: {DEFAULT_CUST_NO}")
+    parser.add_argument("--cust-id", default=DEFAULT_CUST_ID, help=f"custID. Default: {DEFAULT_CUST_ID}")
     parser.add_argument(
         "--execution-mode",
         default="router_only",
         choices=("execute", "router_only"),
         help="Assistant executionMode.",
     )
-    parser.add_argument("--agent-session-id", default=None, help="Optional agentSessionID override.")
     parser.add_argument("--slots-data", default=None, help="Optional JSON string passed as slots_data.")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help="Timeout in seconds.")
     parser.add_argument("--no-stream", dest="stream", action="store_false", help="Use non-stream JSON mode.")
@@ -332,9 +326,8 @@ def main() -> int:
         txt=args.txt,
         current_display=args.current_display,
         base_url=args.base_url,
-        cust_no=args.cust_no,
+        cust_id=args.cust_id,
         execution_mode=args.execution_mode,
-        agent_session_id=args.agent_session_id,
         stream=args.stream,
         debug_trace=args.debug_trace,
         timeout_seconds=args.timeout,

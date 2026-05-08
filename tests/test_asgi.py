@@ -146,6 +146,7 @@ def test_asgi_message_stream_uses_assistant_protocol_service(tmp_path: Path) -> 
                 json={
                     "sessionId": "asgi_session_001",
                     "txt": "给小明转账200",
+                    "custID": "C0001",
                     "stream": True,
                     "executionMode": "router_only",
                 },

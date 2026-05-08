@@ -40,13 +40,21 @@ class RouterMessageRequest(BaseModel):
 
     sessionId: str
     txt: str
+    custID: str
     stream: bool = False
     debugTrace: bool = False
     executionMode: str = "execute"
-    custId: str | None = None
     config_variables: list[ConfigVariable] = Field(default_factory=list)
     recommendTask: list[dict[str, Any]] = Field(default_factory=list)
     currentDisplay: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("sessionId", "txt", "custID")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
 
 
 class TaskCompletionRequest(BaseModel):
@@ -55,10 +63,19 @@ class TaskCompletionRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     sessionId: str
+    custID: str
     taskId: str
     completionSignal: Literal[1, 2]
     stream: bool = False
     debugTrace: bool = False
+
+    @field_validator("sessionId", "custID", "taskId")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
 
 
 class RecognitionPlan(BaseModel):

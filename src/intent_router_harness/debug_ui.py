@@ -448,8 +448,8 @@ _VALIDATOR_HTML = """<!doctype html>
                 <input id="sessionId" autocomplete="off">
               </label>
               <label>
-                用户标识 cust_no
-                <input id="custNo" value="C0001" autocomplete="off">
+                用户标识 custID
+                <input id="custID" value="C0001" autocomplete="off">
               </label>
               <label>
                 执行模式
@@ -514,6 +514,10 @@ _VALIDATOR_HTML = """<!doctype html>
               <div id="taskListView" class="muted">暂无 task_list</div>
             </div>
             <div class="runtime-box">
+              <h3>上下文生命周期</h3>
+              <div id="contextLifecycleView" class="muted">暂无上下文加载/释放事件</div>
+            </div>
+            <div class="runtime-box">
               <h3>最近业务帧</h3>
               <pre id="lastFrameView">{}</pre>
             </div>
@@ -537,6 +541,7 @@ _VALIDATOR_HTML = """<!doctype html>
       currentTask: null,
       taskList: [],
       lastFrame: null,
+      contextEvents: [],
       busy: false,
     };
 
@@ -544,7 +549,7 @@ _VALIDATOR_HTML = """<!doctype html>
       statusDot: document.getElementById("statusDot"),
       statusText: document.getElementById("statusText"),
       sessionId: document.getElementById("sessionId"),
-      custNo: document.getElementById("custNo"),
+      custID: document.getElementById("custID"),
       executionMode: document.getElementById("executionMode"),
       sampleSelect: document.getElementById("sampleSelect"),
       messageText: document.getElementById("messageText"),
@@ -557,6 +562,7 @@ _VALIDATOR_HTML = """<!doctype html>
       conversation: document.getElementById("conversation"),
       currentTaskView: document.getElementById("currentTaskView"),
       taskListView: document.getElementById("taskListView"),
+      contextLifecycleView: document.getElementById("contextLifecycleView"),
       lastFrameView: document.getElementById("lastFrameView"),
       lastRequestView: document.getElementById("lastRequestView"),
     };
@@ -649,19 +655,15 @@ _VALIDATOR_HTML = """<!doctype html>
       const sessionId = els.sessionId.value.trim() || newSessionId();
       els.sessionId.value = sessionId;
       localStorage.setItem("intent_router_validator_session", sessionId);
-      const custNo = els.custNo.value.trim() || "C0001";
+      const custID = els.custID.value.trim() || "C0001";
       return {
         sessionId,
         txt: text,
+        custID,
         config_variables: [
-          { name: "cust_no", value: custNo },
-          { name: "custID", value: custNo },
-          { name: "sessionID", value: sessionId },
-          { name: "agentSessionID", value: sessionId },
           { name: "currentDisplay", value: "validator_page" },
         ],
         executionMode: els.executionMode.value,
-        custId: custNo,
         stream: true,
         debugTrace: els.debugTrace.checked,
       };
@@ -673,6 +675,7 @@ _VALIDATOR_HTML = """<!doctype html>
       }
       return {
         sessionId: els.sessionId.value.trim(),
+        custID: els.custID.value.trim() || "C0001",
         taskId: state.currentTask.taskId,
         completionSignal: 2,
         stream: true,
@@ -777,6 +780,7 @@ _VALIDATOR_HTML = """<!doctype html>
       }
       if (frame.event === "trace") {
         const title = payload.title || payload.stage || "trace";
+        handleTraceFrame(payload);
         appendBubble("trace", title, payload.summary || payload.stage || "", payload);
         return;
       }
@@ -785,6 +789,33 @@ _VALIDATOR_HTML = """<!doctype html>
         return;
       }
       handleBusinessFrame(payload);
+    }
+
+    function handleTraceFrame(payload) {
+      if (!payload || typeof payload !== "object") {
+        return;
+      }
+      const trackedStages = new Set([
+        "skill_body_loaded",
+        "reference_body_loaded",
+        "prompt_context_released",
+        "context_lease_released",
+        "context_released",
+      ]);
+      if (!trackedStages.has(payload.stage)) {
+        return;
+      }
+      state.contextEvents.push({
+        stage: payload.stage,
+        title: payload.title || payload.stage,
+        summary: payload.summary || "",
+        data: payload.data || {},
+        time: new Date().toLocaleTimeString(),
+      });
+      if (state.contextEvents.length > 20) {
+        state.contextEvents = state.contextEvents.slice(-20);
+      }
+      updateRuntime();
     }
 
     function parseSseFrame(rawFrame) {
@@ -847,9 +878,47 @@ _VALIDATOR_HTML = """<!doctype html>
       } else {
         els.taskListView.textContent = "暂无 task_list";
       }
+      renderContextLifecycle();
       els.lastFrameView.textContent = JSON.stringify(state.lastFrame || {}, null, 2);
       const canComplete = task && !state.busy && ["ready_for_dispatch", "waiting_assistant_completion"].includes(task.status);
       els.completeBtn.disabled = !canComplete;
+    }
+
+    function renderContextLifecycle() {
+      if (!state.contextEvents.length) {
+        els.contextLifecycleView.textContent = "暂无上下文加载/释放事件";
+        return;
+      }
+      els.contextLifecycleView.innerHTML = state.contextEvents.map((event) => `
+        <div class="task-row">
+          <div class="kv">
+            <span class="tag ${event.stage.includes("released") ? "ok" : "warn"}">${escapeHtml(event.stage)}</span>
+            <span class="tag">${escapeHtml(event.time)}</span>
+          </div>
+          <div style="margin-top: 6px;">${escapeHtml(event.summary || event.title)}</div>
+          ${renderContextEventDetail(event)}
+        </div>
+      `).join("");
+    }
+
+    function renderContextEventDetail(event) {
+      const data = event.data || {};
+      const values = [];
+      if (data.skill) values.push("skill=" + data.skill);
+      if (data.reference_id) values.push("reference=" + data.reference_id);
+      if (Array.isArray(data.released_skill_bodies) && data.released_skill_bodies.length) {
+        values.push("released skill bodies=" + data.released_skill_bodies.join(", "));
+      }
+      if (Array.isArray(data.released_reference_bodies) && data.released_reference_bodies.length) {
+        values.push("released reference bodies=" + data.released_reference_bodies.join(", "));
+      }
+      if (Array.isArray(data.released_leases) && data.released_leases.length) {
+        values.push("released leases=" + data.released_leases.map((lease) => lease.task_id || lease.intent_code || "lease").join(", "));
+      }
+      if (!values.length) {
+        return "";
+      }
+      return `<div class="muted" style="margin-top: 6px; font-size: 12px;">${escapeHtml(values.join(" | "))}</div>`;
     }
 
     els.sendBtn.addEventListener("click", sendMessage);
@@ -860,6 +929,7 @@ _VALIDATOR_HTML = """<!doctype html>
       state.currentTask = null;
       state.taskList = [];
       state.lastFrame = null;
+      state.contextEvents = [];
       updateRuntime();
       setStatus("ready", "new session");
     });

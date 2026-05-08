@@ -43,9 +43,11 @@ class StaticPlanner:
 class FakeLLMClient:
     def __init__(self, responses: list[str]) -> None:
         self.responses = list(responses)
+        self.messages: list[list[dict[str, str]]] = []
 
     def chat(self, messages, max_tokens=None):
-        del messages, max_tokens
+        del max_tokens
+        self.messages.append(messages)
         content = self.responses.pop(0)
         return {
             "model": "fake-llm",
@@ -117,8 +119,8 @@ def test_v1_message_stream_emits_recognition_before_business(tmp_path: Path) -> 
                 {
                     "sessionId": "assistant_tc_s01",
                     "txt": "给小明转账",
+                    "custID": "C0001",
                     "stream": True,
-                    "custId": "C0001",
                 }
             ),
             headers={"Content-Type": "application/json"},
@@ -178,6 +180,7 @@ def test_v1_message_stream_can_emit_debug_trace_events(tmp_path: Path) -> None:
                 {
                     "sessionId": "assistant_trace",
                     "txt": "给小明转账",
+                    "custID": "C0001",
                     "stream": True,
                     "debugTrace": True,
                 }
@@ -246,6 +249,7 @@ def test_v1_message_non_stream_returns_final_business_frame(tmp_path: Path) -> N
                 {
                     "sessionId": "assistant_non_stream",
                     "txt": "给小明转账200",
+                    "custID": "C0001",
                     "stream": False,
                     "executionMode": "router_only",
                 }
@@ -306,7 +310,12 @@ def test_task_completion_stream_confirms_current_task(tmp_path: Path) -> None:
             "POST",
             "/api/v1/message",
             body=json.dumps(
-                {"sessionId": "assistant_tc_completion", "txt": "给小明转账200", "stream": False}
+                {
+                    "sessionId": "assistant_tc_completion",
+                    "txt": "给小明转账200",
+                    "custID": "C0001",
+                    "stream": False,
+                }
             ),
             headers={"Content-Type": "application/json"},
         )
@@ -317,6 +326,7 @@ def test_task_completion_stream_confirms_current_task(tmp_path: Path) -> None:
             body=json.dumps(
                 {
                     "sessionId": "assistant_tc_completion",
+                    "custID": "C0001",
                     "taskId": "task_transfer",
                     "completionSignal": 2,
                     "stream": True,
@@ -375,9 +385,9 @@ def test_final_task_completion_clears_active_runtime_memory(tmp_path: Path) -> N
     )
     assert service.assistant is not None
 
-    service.handle_message(RouterMessageRequest(sessionId="final_clear_session", txt="给小明转账200"))
+    service.handle_message(RouterMessageRequest(custID="C0001", sessionId="final_clear_session", txt="给小明转账200"))
     result = service.handle_task_completion(
-        TaskCompletionRequest(
+        TaskCompletionRequest(custID="C0001", 
             sessionId="final_clear_session",
             taskId="task_transfer",
             completionSignal=2,
@@ -428,7 +438,7 @@ def test_assistant_service_saves_and_releases_context_lease(tmp_path: Path) -> N
     assert service.assistant is not None
 
     service.handle_message(
-        RouterMessageRequest(
+        RouterMessageRequest(custID="C0001", 
             sessionId="lease_session",
             txt="我要转账",
             stream=False,
@@ -442,7 +452,7 @@ def test_assistant_service_saves_and_releases_context_lease(tmp_path: Path) -> N
     assert task_state.active_context["reference_ids"] == ["ref_001"]
 
     service.handle_task_completion(
-        TaskCompletionRequest(
+        TaskCompletionRequest(custID="C0001", 
             sessionId="lease_session",
             taskId="task_transfer",
             completionSignal=2,
@@ -489,7 +499,7 @@ def test_terminal_message_plan_clears_persisted_current_task_and_context(tmp_pat
     assert service.assistant is not None
 
     result = service.handle_message(
-        RouterMessageRequest(sessionId="cancel_session", txt="取消")
+        RouterMessageRequest(custID="C0001", sessionId="cancel_session", txt="取消")
     )
     saved = service.assistant.sessions.get_task_state("cancel_session")
 
@@ -531,7 +541,7 @@ def test_terminal_current_task_without_task_list_updates_runtime_state(tmp_path:
         ),
     )
     assert service.assistant is not None
-    service.handle_message(RouterMessageRequest(sessionId="terminal_without_list_session", txt="我要转账"))
+    service.handle_message(RouterMessageRequest(custID="C0001", sessionId="terminal_without_list_session", txt="我要转账"))
 
     cancelled_task = initial_task.model_copy(update={"status": "cancelled"})
     service.assistant.planner = StaticPlanner(
@@ -547,7 +557,7 @@ def test_terminal_current_task_without_task_list_updates_runtime_state(tmp_path:
         )
     )
 
-    service.handle_message(RouterMessageRequest(sessionId="terminal_without_list_session", txt="取消"))
+    service.handle_message(RouterMessageRequest(custID="C0001", sessionId="terminal_without_list_session", txt="取消"))
     saved = service.assistant.sessions.get_task_state("terminal_without_list_session")
 
     assert saved.current_task is None
@@ -602,14 +612,14 @@ def test_task_completion_advances_to_next_waiting_task(tmp_path: Path) -> None:
     assert service.assistant is not None
 
     service.handle_message(
-        RouterMessageRequest(
+        RouterMessageRequest(custID="C0001", 
             sessionId="multi_completion_session",
             txt="我要先给王阳明转账，再给李正义转账",
             executionMode="router_only",
         )
     )
     result = service.handle_task_completion(
-        TaskCompletionRequest(
+        TaskCompletionRequest(custID="C0001", 
             sessionId="multi_completion_session",
             taskId="task_001",
             completionSignal=2,
@@ -665,7 +675,7 @@ def test_current_task_status_is_not_downgraded_to_running(tmp_path: Path) -> Non
     assert service.assistant is not None
 
     result = service.handle_message(
-        RouterMessageRequest(
+        RouterMessageRequest(custID="C0001", 
             sessionId="multi_status_session",
             txt="我要先给王阳明转账，再给李正义转账",
         )
@@ -712,7 +722,7 @@ def test_current_task_slot_memory_updates_protocol_and_session(tmp_path: Path) -
     assert service.assistant is not None
 
     result = service.handle_message(
-        RouterMessageRequest(
+        RouterMessageRequest(custID="C0001", 
             sessionId="current_task_slots_session",
             txt="100元",
             executionMode="router_only",
@@ -746,18 +756,18 @@ def test_session_binds_to_single_user_and_rejects_mismatch(tmp_path: Path) -> No
 
     service.handle_message(
         RouterMessageRequest(
+            custID="cust_001",
             sessionId="owned_session",
             txt="我要转账",
-            config_variables=[{"name": "cust_no", "value": "cust_001"}],
         )
     )
 
     try:
         service.handle_message(
             RouterMessageRequest(
+                custID="cust_002",
                 sessionId="owned_session",
                 txt="我要转账",
-                config_variables=[{"name": "cust_no", "value": "cust_002"}],
             )
         )
     except RuntimeError as exc:
@@ -801,9 +811,9 @@ def test_session_expires_after_idle_timeout_and_clears_memory(tmp_path: Path) ->
 
     service.handle_message(
         RouterMessageRequest(
+            custID="cust_001",
             sessionId="expiring_session",
             txt="给小明转账",
-            config_variables=[{"name": "cust_no", "value": "cust_001"}],
         )
     )
     saved = service.assistant.sessions.get_task_state("expiring_session")
@@ -846,16 +856,16 @@ def test_task_completion_rejects_replay_after_runtime_task_is_cleared(tmp_path: 
     )
     assert service.assistant is not None
 
-    service.handle_message(RouterMessageRequest(sessionId="replay_session", txt="给小明转账200"))
+    service.handle_message(RouterMessageRequest(custID="C0001", sessionId="replay_session", txt="给小明转账200"))
     first = service.handle_task_completion(
-        TaskCompletionRequest(
+        TaskCompletionRequest(custID="C0001", 
             sessionId="replay_session",
             taskId="task_transfer",
             completionSignal=2,
         )
     )
     second = service.handle_task_completion(
-        TaskCompletionRequest(
+        TaskCompletionRequest(custID="C0001", 
             sessionId="replay_session",
             taskId="task_transfer",
             completionSignal=2,
@@ -865,6 +875,50 @@ def test_task_completion_rejects_replay_after_runtime_task_is_cleared(tmp_path: 
     assert first.final_frame.status == "completed"
     assert second.final_frame.ok is False
     assert second.final_frame.errorCode == "TASK_NOT_FOUND"
+
+
+def test_task_completion_rejects_user_mismatch(tmp_path: Path) -> None:
+    task = PlannedTask(
+        taskId="task_transfer",
+        intent_code="AG_TRANS",
+        status="waiting_assistant_completion",
+        output={"message": "done"},
+    )
+    service = IntentRouterHarnessService.from_spec(
+        _write_minimal_harness(tmp_path),
+        message_planner=StaticPlanner(
+            PlannerOutput(
+                mode="single_task",
+                status="waiting_assistant_completion",
+                completion_state=1,
+                completion_reason="assistant_confirmation_required",
+                intent_code="AG_TRANS",
+                recognition=RecognitionPlan(intent_code="AG_TRANS"),
+                task_list=[task],
+                current_task=task,
+                output={"message": "done"},
+            )
+        ),
+    )
+    assert service.assistant is not None
+
+    service.handle_message(
+        RouterMessageRequest(
+            custID="cust_001",
+            sessionId="completion_owned_session",
+            txt="给小明转账200",
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="already bound"):
+        service.handle_task_completion(
+            TaskCompletionRequest(
+                custID="cust_002",
+                sessionId="completion_owned_session",
+                taskId="task_transfer",
+                completionSignal=2,
+            )
+        )
 
 
 def test_llm_planner_rejects_intent_not_declared_by_loaded_skill(tmp_path: Path) -> None:
@@ -945,6 +999,216 @@ def test_llm_planner_rejects_intent_not_declared_by_loaded_skill(tmp_path: Path)
 
     with pytest.raises(PlannerError, match="not declared by loaded skills"):
         planner.plan_message(
-            RouterMessageRequest(sessionId="invalid_intent_session", txt="我要转账"),
+            RouterMessageRequest(custID="C0001", sessionId="invalid_intent_session", txt="我要转账"),
             TaskRuntimeState(),
         )
+
+
+def test_llm_planner_allows_existing_unloaded_task_intent_in_task_list(tmp_path: Path) -> None:
+    skills_root = tmp_path / "skills"
+    transfer_dir = skills_root / "transfer-routing"
+    transfer_dir.mkdir(parents=True)
+    (transfer_dir / "SKILL.md").write_text(
+        "\n".join(
+            [
+                "---",
+                "name: transfer-routing",
+                "description: 转账路由规则",
+                'surfaces: ["task_planning"]',
+                'intent_codes: ["AG_TRANS"]',
+                'domain_codes: ["finance"]',
+                'capabilities: ["routing", "slots", "planning"]',
+                "---",
+                "# 转账",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    bill_dir = skills_root / "bill-routing"
+    bill_dir.mkdir(parents=True)
+    (bill_dir / "SKILL.md").write_text(
+        "\n".join(
+            [
+                "---",
+                "name: bill-routing",
+                "description: 缴费路由规则",
+                'surfaces: ["task_planning"]',
+                'intent_codes: ["AG_PAY_BILL"]',
+                'domain_codes: ["finance"]',
+                'capabilities: ["routing", "slots", "planning"]',
+                "---",
+                "# 缴费",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    spec_path = tmp_path / "planner-harness.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                'name = "planner-existing-task-validation"',
+                'version = "2026.05"',
+                f'skill_roots = ["{skills_root.as_posix()}"]',
+                "",
+                "[surfaces.task_planning]",
+                'system = "输出 planner JSON。"',
+                'human = "用户消息：{message}\\n任务运行态：{task_state_json}\\nSchema：{planner_output_schema_json}"',
+                "include_skill_index = true",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    harness = load_prompt_harness(spec_path)
+    assert harness is not None
+    transfer_task = PlannedTask(
+        taskId="task_001",
+        intent_code="AG_TRANS",
+        status="waiting_user_input",
+        title="转账",
+    )
+    bill_task = PlannedTask(
+        taskId="task_002",
+        intent_code="AG_PAY_BILL",
+        status="waiting_user_input",
+        title="缴费",
+    )
+    planner = LLMMessagePlanner(
+        harness=harness,
+        llm_client=FakeLLMClient(
+            [
+                json.dumps(
+                    {
+                        "mode": "slot_filling",
+                        "status": "ready_for_dispatch",
+                        "completion_reason": "router_ready_for_dispatch",
+                        "intent_code": "AG_TRANS",
+                        "recognition": {"intent_code": "AG_TRANS"},
+                        "slot_memory": {"payee_name": "孙双双", "amount": "8999"},
+                        "task_list": [
+                            {
+                                "taskId": "task_001",
+                                "intent_code": "AG_TRANS",
+                                "status": "ready_for_dispatch",
+                                "slot_memory": {"payee_name": "孙双双", "amount": "8999"},
+                            },
+                            {
+                                "taskId": "task_002",
+                                "intent_code": "AG_PAY_BILL",
+                                "status": "waiting_user_input",
+                            },
+                        ],
+                        "current_task": {
+                            "taskId": "task_001",
+                            "intent_code": "AG_TRANS",
+                            "status": "ready_for_dispatch",
+                            "slot_memory": {"payee_name": "孙双双", "amount": "8999"},
+                        },
+                    }
+                )
+            ]
+        ),
+    )
+
+    plan = planner.plan_message(
+        RouterMessageRequest(custID="C0001", sessionId="existing_task_intent_session", txt="给孙双双转8999"),
+        TaskRuntimeState(
+            task_list=[transfer_task, bill_task],
+            current_task=transfer_task,
+            active_context={
+                "task_id": "task_001",
+                "intent_code": "AG_TRANS",
+                "skill_names": ["transfer-routing"],
+            },
+            context_leases=[
+                {"task_id": "task_001", "intent_code": "AG_TRANS", "skill_names": ["transfer-routing"]},
+                {"task_id": "task_002", "intent_code": "AG_PAY_BILL", "skill_names": ["bill-routing"]},
+            ],
+        ),
+    )
+
+    assert [task.intent_code for task in plan.task_list] == ["AG_TRANS", "AG_PAY_BILL"]
+
+
+def test_llm_planner_removes_session_identifiers_from_prompt_context(tmp_path: Path) -> None:
+    spec_path = tmp_path / "planner-harness.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                'name = "planner-private-context"',
+                'version = "2026.05"',
+                "",
+                "[surfaces.task_planning]",
+                'system = "输出 planner JSON。"',
+                (
+                    'human = "用户消息：{message}\\n推荐：{recommend_task_json}\\n'
+                    '展示：{recent_messages_json}\\n配置：{config_variables_json}\\n'
+                    '状态：{task_state_json}\\nSchema：{planner_output_schema_json}"'
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    harness = load_prompt_harness(spec_path)
+    assert harness is not None
+    llm_client = FakeLLMClient(
+        [
+            json.dumps(
+                {
+                    "mode": "failed",
+                    "status": "failed",
+                    "completion_reason": "no_intent",
+                }
+            )
+        ]
+    )
+    planner = LLMMessagePlanner(harness=harness, llm_client=llm_client)
+
+    planner.plan_message(
+        RouterMessageRequest(
+            custID="cust_should_not_reach_llm",
+            sessionId="session_should_not_reach_llm",
+            txt="你好",
+            config_variables=[
+                {"name": "sessionID", "value": "session_should_not_reach_llm"},
+                {"name": "agentSessionID", "value": "agent_should_not_reach_llm"},
+                {"name": "custID", "value": "cust_should_not_reach_llm"},
+                {"name": "currentDisplay", "value": "validator_page"},
+                {
+                    "name": "nested",
+                    "value": {
+                        "sessionId": "nested_session_should_not_reach_llm",
+                        "business": "kept",
+                    },
+                },
+            ],
+            recommendTask=[
+                {
+                    "title": "推荐任务",
+                    "sessionId": "recommend_session_should_not_reach_llm",
+                    "payload": {"agentSessionID": "recommend_agent_should_not_reach_llm"},
+                }
+            ],
+            currentDisplay=[
+                {
+                    "page": "validator",
+                    "agent_session_id": "display_agent_should_not_reach_llm",
+                }
+            ],
+        ),
+        TaskRuntimeState(),
+    )
+
+    rendered_prompt = "\n".join(message["content"] for message in llm_client.messages[-1])
+    assert "session_should_not_reach_llm" not in rendered_prompt
+    assert "agent_should_not_reach_llm" not in rendered_prompt
+    assert "cust_should_not_reach_llm" not in rendered_prompt
+    assert "nested_session_should_not_reach_llm" not in rendered_prompt
+    assert "recommend_session_should_not_reach_llm" not in rendered_prompt
+    assert "recommend_agent_should_not_reach_llm" not in rendered_prompt
+    assert "display_agent_should_not_reach_llm" not in rendered_prompt
+    assert "validator_page" in rendered_prompt
+    assert "business" in rendered_prompt

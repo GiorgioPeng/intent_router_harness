@@ -50,7 +50,8 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    Request["RouterMessageRequest\nsessionId / txt / stream / executionMode / config_variables"] --> PlannerInput["Planner 输入"]
+    Request["RouterMessageRequest\nsessionId / txt / stream / executionMode / config_variables"] --> Boundary["服务端边界\n会话/身份字段只用于状态索引"]
+    Boundary --> PlannerInput["Planner 输入\n不包含 sessionId / agentSessionID / custID"]
     Session["SessionState\nuser_binding_id / expires_at"] --> Runtime["TaskRuntimeState\nslot_memory / task_list / current_task"]
     Runtime --> PlannerInput
     Spec["Harness Spec\nsurface / prompt / binding / output schema"] --> PlannerInput

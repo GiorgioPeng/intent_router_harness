@@ -43,12 +43,9 @@ POST /api/v1/message
   "stream": true,
   "debugTrace": false,
   "executionMode": "router_only",
-  "custId": "C0001",
+  "custID": "C0001",
   "config_variables": [
-    {"name": "custID", "value": "C0001"},
-    {"name": "sessionID", "value": "assistant_case_001"},
-    {"name": "currentDisplay", "value": "transfer_page"},
-    {"name": "agentSessionID", "value": "assistant_case_001"}
+    {"name": "currentDisplay", "value": "transfer_page"}
   ],
   "recommendTask": [],
   "currentDisplay": []
@@ -250,7 +247,7 @@ input_required
   "txt": "我要转账",
   "stream": true,
   "executionMode": "router_only",
-  "custId": "C0001"
+  "custID": "C0001"
 }
 ```
 
@@ -590,8 +587,8 @@ input_required
 
 步骤：
 
-1. `sessionId=tc_se01`，`cust_no=cust_001` 输入 `我要转账`。
-2. 同一 `sessionId`，`cust_no=cust_002` 再次请求。
+1. `sessionId=tc_se01`，`custID=cust_001` 输入 `我要转账`。
+2. 同一 `sessionId`，`custID=cust_002` 再次请求。
 
 期望：
 

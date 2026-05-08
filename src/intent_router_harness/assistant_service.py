@@ -15,7 +15,7 @@ from intent_router_harness.contracts import (
     TaskRuntimeState,
 )
 from intent_router_harness.planner import MessagePlanner, PlannerError
-from intent_router_harness.session_store import InMemorySessionStore
+from intent_router_harness.session_store import InMemorySessionStore, SessionNotFoundError
 from intent_router_harness.trace import emit_trace
 
 logger = logging.getLogger(__name__)
@@ -318,19 +318,9 @@ class AssistantProtocolService:
             len(updated_task_state.task_list),
             _json_for_log(updated_task_state.active_context, 1000),
         )
-        if request.debugTrace and task_state.active_context and not updated_task_state.active_context:
-            trace_events.append(
-                AssistantTraceEvent(
-                    stage="context_released",
-                    title="任务上下文释放",
-                    summary="当前任务已结束，释放 skill/reference lease",
-                    data={
-                        "session_id": request.sessionId,
-                        "released_context": task_state.active_context,
-                    },
-                )
-            )
-            emit_trace(trace_events[-1])
+        if request.debugTrace:
+            _append_prompt_body_released_trace(request.sessionId, plan, trace_events)
+            _append_context_lease_released_trace(request.sessionId, task_state, updated_task_state, trace_events)
         return AssistantServiceResult(frames=frames, trace_events=trace_events)
 
     def handle_task_completion(self, request: TaskCompletionRequest) -> AssistantServiceResult:
@@ -357,7 +347,20 @@ class AssistantProtocolService:
             request.completionSignal,
             request.stream,
         )
-        session_load = self.sessions.load(request.sessionId)
+        try:
+            session_load = self.sessions.load_existing(
+                request.sessionId,
+                user_binding_id=request.custID,
+            )
+        except SessionNotFoundError as exc:
+            return _failed_completion_result(
+                request,
+                TaskRuntimeState(),
+                trace_events,
+                completion_reason="assistant_session_not_found",
+                error_code="SESSION_NOT_FOUND",
+                message=str(exc),
+            )
         session = session_load.session
         task_state = session_load.task_state
         logger.info(
@@ -533,20 +536,8 @@ class AssistantProtocolService:
             len(updated_task_state.task_list),
             _json_for_log(updated_task_state.active_context, 1000),
         )
-        if request.debugTrace and original_context and not updated_task_state.active_context:
-            trace_events.append(
-                AssistantTraceEvent(
-                    stage="context_released",
-                    title="任务上下文释放",
-                    summary="任务完成回调已结束当前任务，释放 skill/reference lease",
-                    data={
-                        "session_id": request.sessionId,
-                        "task_id": request.taskId,
-                        "released_context": original_context,
-                    },
-                )
-            )
-            emit_trace(trace_events[-1])
+        if request.debugTrace:
+            _append_context_lease_released_trace(request.sessionId, task_state, updated_task_state, trace_events)
         if request.debugTrace:
             trace_events.append(
                 AssistantTraceEvent(
@@ -957,12 +948,70 @@ def _effective_intent_code(plan: PlannerOutput) -> str | None:
 
 
 def _request_user_binding_id(request: RouterMessageRequest) -> str | None:
-    variables = {item.name: item.value for item in request.config_variables}
-    for name in ("cust_no", "custNo", "custNO"):
-        value = variables.get(name)
-        if value is not None and str(value).strip():
-            return str(value)
-    return None
+    return request.custID
+
+
+def _append_prompt_body_released_trace(
+    session_id: str,
+    plan: PlannerOutput,
+    trace_events: list[AssistantTraceEvent],
+) -> None:
+    router_context = plan.diagnostics.get("_router_context")
+    if not isinstance(router_context, dict):
+        return
+    skill_names = _string_list(router_context.get("skill_names"))
+    reference_ids = _string_list(router_context.get("reference_ids"))
+    if not skill_names and not reference_ids:
+        return
+    event = AssistantTraceEvent(
+        stage="prompt_context_released",
+        title="Prompt上下文释放",
+        summary="本轮 LLM 调用结束，已加载的 skill/reference 正文不进入运行态内存",
+        data={
+            "session_id": session_id,
+            "released_skill_bodies": skill_names,
+            "released_reference_bodies": reference_ids,
+            "retained_as_lease_only": True,
+        },
+    )
+    trace_events.append(event)
+    emit_trace(event)
+
+
+def _append_context_lease_released_trace(
+    session_id: str,
+    before: TaskRuntimeState,
+    after: TaskRuntimeState,
+    trace_events: list[AssistantTraceEvent],
+) -> None:
+    released = _released_context_leases(before.context_leases, after.context_leases)
+    if not released:
+        return
+    event = AssistantTraceEvent(
+        stage="context_lease_released",
+        title="任务上下文Lease释放",
+        summary=f"释放 {len(released)} 个已结束任务的 skill/reference lease",
+        data={
+            "session_id": session_id,
+            "released_leases": released,
+            "remaining_leases": after.context_leases,
+            "active_context": after.active_context,
+        },
+    )
+    trace_events.append(event)
+    emit_trace(event)
+
+
+def _released_context_leases(
+    before: list[dict[str, Any]],
+    after: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    remaining_task_ids = {str(lease.get("task_id") or "") for lease in after}
+    return [
+        dict(lease)
+        for lease in before
+        if str(lease.get("task_id") or "") and str(lease.get("task_id") or "") not in remaining_task_ids
+    ]
 
 
 def _failed_completion_result(

@@ -28,6 +28,21 @@ ASSISTANT_STATUS_VALUES = [
     "failed",
 ]
 
+_LLM_PRIVATE_CONTEXT_KEYS = {
+    "sessionid",
+    "session_id",
+    "session",
+    "agentsessionid",
+    "agent_session_id",
+    "agentsession",
+    "custid",
+    "cust_id",
+    "custno",
+    "cust_no",
+    "userid",
+    "user_id",
+}
+
 
 class PlannerError(RuntimeError):
     """Raised when planner output cannot be produced or validated."""
@@ -83,11 +98,11 @@ class LLMMessagePlanner:
         variables = {
             "message": request.txt,
             "execution_mode": request.executionMode,
-            "task_state_json": task_state.model_dump_json(exclude_none=True),
-            "recommend_task_json": json.dumps(request.recommendTask, ensure_ascii=False),
-            "recent_messages_json": json.dumps(request.currentDisplay, ensure_ascii=False),
+            "task_state_json": _llm_context_json(task_state.model_dump(mode="json", exclude_none=True)),
+            "recommend_task_json": _llm_context_json(request.recommendTask),
+            "recent_messages_json": _llm_context_json(request.currentDisplay),
             "config_variables_json": json.dumps(
-                [item.model_dump(mode="json") for item in request.config_variables],
+                _sanitize_llm_context([item.model_dump(mode="json") for item in request.config_variables]),
                 ensure_ascii=False,
             ),
             "planner_output_schema_json": _planner_output_schema_json(),
@@ -122,7 +137,7 @@ class LLMMessagePlanner:
             trace_events=trace_events,
         )
         payload, plan = _parse_plan_payload(request, content)
-        _validate_plan_intents(request, plan, prompt, self.harness)
+        _validate_plan_intents(request, plan, task_state, prompt, self.harness)
 
         if plan.requested_references:
             requested_reference_ids = tuple(
@@ -167,7 +182,7 @@ class LLMMessagePlanner:
                 trace_events=trace_events,
             )
             payload, plan = _parse_plan_payload(request, content)
-            _validate_plan_intents(request, plan, prompt, self.harness)
+            _validate_plan_intents(request, plan, task_state, prompt, self.harness)
 
         logger.info(
             "llm.plan.validated session_id=%s mode=%s status=%s intent_code=%s completion_reason=%s slot_memory=%s task_count=%d output=%s",
@@ -354,6 +369,7 @@ def _planner_output_schema_json() -> str:
             "当 task runtime state 中存在等待中的活跃任务时，将短回复优先解释为该任务的槽位值，并保留已有 slot_memory。",
             "补槽时必须整体解析最新消息；如果同一条消息明确提供多个当前任务缺失槽位，应一次性写入所有有依据的槽位。",
             "当等待中的活跃 AG_TRANS 同时缺少 payee_name 和 amount，且用户同句给出明确收款人实体和明确金额表达时，必须一次性补齐两个槽位。",
+            "当用户先给出收款人实体，后半句用他/她/对方/其/这个人/该收款人等指代词连接转账、打款或汇款动作和金额时，必须同时抽取 payee_name 和 amount。",
             "planner_output_schema_json 中的 examples 仅说明输出结构和状态选择，不限定可识别文本范围。",
             "当 task runtime state 中存在多个等待任务时，第一笔/第一次/第一个、第二笔/第二次/第二个等顺序表达应按 task_list 顺序定位任务并补充对应 slot_memory。",
             "recommendTask 只作为当前轮 router 上下文；只有用户明确选择全部、部分或指定推荐任务时，才基于推荐任务创建 task。",
@@ -461,6 +477,37 @@ def _planner_output_schema_json() -> str:
                 "output": {},
             },
             "active_transfer_combined_slot_reply": {
+                "mode": "slot_filling",
+                "status": "ready_for_dispatch",
+                "completion_state": 0,
+                "completion_reason": "router_ready_for_dispatch",
+                "intent_code": "AG_TRANS",
+                "recognition": {
+                    "intent_code": "AG_TRANS",
+                },
+                "slot_memory": {"payee_name": "收款人甲", "amount": "1000"},
+                "task_list": [
+                    {
+                        "taskId": "task_001",
+                        "intent_code": "AG_TRANS",
+                        "status": "ready_for_dispatch",
+                        "title": "转账给收款人甲",
+                        "slot_memory": {"payee_name": "收款人甲", "amount": "1000"},
+                        "output": {},
+                    }
+                ],
+                "current_task": {
+                    "taskId": "task_001",
+                    "intent_code": "AG_TRANS",
+                    "status": "ready_for_dispatch",
+                    "title": "转账给收款人甲",
+                    "slot_memory": {"payee_name": "收款人甲", "amount": "1000"},
+                    "output": {},
+                },
+                "message": "",
+                "output": {},
+            },
+            "active_transfer_pronoun_amount_reply": {
                 "mode": "slot_filling",
                 "status": "ready_for_dispatch",
                 "completion_state": 0,
@@ -689,6 +736,7 @@ def _parse_plan_payload(
 def _validate_plan_intents(
     request: RouterMessageRequest,
     plan: PlannerOutput,
+    task_state: TaskRuntimeState,
     prompt: Any,
     harness: PromptHarness,
 ) -> None:
@@ -696,26 +744,35 @@ def _validate_plan_intents(
     if not allowed_intents:
         return
 
-    emitted: list[tuple[str, str]] = []
+    existing_task_intents = _existing_task_intents(task_state)
+    emitted: list[tuple[str, str, str | None]] = []
     if plan.intent_code:
-        emitted.append(("intent_code", plan.intent_code))
+        emitted.append(("intent_code", plan.intent_code, None))
     if plan.recognition is not None and plan.recognition.intent_code:
-        emitted.append(("recognition.intent_code", plan.recognition.intent_code))
+        emitted.append(("recognition.intent_code", plan.recognition.intent_code, None))
     for index, task in enumerate(plan.task_list):
-        emitted.append((f"task_list[{index}].intent_code", task.intent_code))
+        emitted.append((f"task_list[{index}].intent_code", task.intent_code, task.taskId))
     if plan.current_task is not None:
-        emitted.append(("current_task.intent_code", plan.current_task.intent_code))
+        emitted.append(("current_task.intent_code", plan.current_task.intent_code, plan.current_task.taskId))
 
     invalid = [
         {"field": field, "intent_code": intent_code}
-        for field, intent_code in emitted
+        for field, intent_code, task_id in emitted
         if intent_code not in allowed_intents
+        and (task_id is None or existing_task_intents.get(task_id) != intent_code)
     ]
     if invalid:
         raise PlannerError(
             "LLM planner emitted intent_code not declared by loaded skills: "
             f"session_id={request.sessionId} invalid={invalid} allowed={sorted(allowed_intents)}"
         )
+
+
+def _existing_task_intents(task_state: TaskRuntimeState) -> dict[str, str]:
+    task_intents = {task.taskId: task.intent_code for task in task_state.task_list}
+    if task_state.current_task is not None:
+        task_intents.setdefault(task_state.current_task.taskId, task_state.current_task.intent_code)
+    return task_intents
 
 
 def _allowed_intents_for_loaded_skills(prompt: Any, harness: PromptHarness) -> set[str]:
@@ -773,6 +830,53 @@ def _task_for_log(task: object | None) -> str:
     if hasattr(task, "model_dump"):
         return _truncate_for_log(json.dumps(task.model_dump(mode="json"), ensure_ascii=False), 1200)
     return _truncate_for_log(str(task), 1200)
+
+
+def _llm_context_json(value: Any) -> str:
+    return json.dumps(_sanitize_llm_context(value), ensure_ascii=False)
+
+
+def _sanitize_llm_context(value: Any) -> Any:
+    """Remove server-owned identity/session values before rendering LLM prompts."""
+    if isinstance(value, list):
+        cleaned_items = []
+        for item in value:
+            cleaned = _sanitize_llm_context(item)
+            if cleaned is not _OMIT:
+                cleaned_items.append(cleaned)
+        return cleaned_items
+    if isinstance(value, tuple):
+        return _sanitize_llm_context(list(value))
+    if isinstance(value, dict):
+        if _is_private_config_variable(value):
+            return _OMIT
+        cleaned: dict[str, Any] = {}
+        for key, item_value in value.items():
+            if _is_private_context_key(str(key)):
+                continue
+            cleaned_value = _sanitize_llm_context(item_value)
+            if cleaned_value is not _OMIT:
+                cleaned[key] = cleaned_value
+        return cleaned
+    return value
+
+
+class _OmitValue:
+    pass
+
+
+_OMIT = _OmitValue()
+
+
+def _is_private_config_variable(value: dict[str, Any]) -> bool:
+    name = value.get("name")
+    return isinstance(name, str) and _is_private_context_key(name)
+
+
+def _is_private_context_key(key: str) -> bool:
+    normalized = key.replace("-", "_").lower()
+    compact = normalized.replace("_", "")
+    return normalized in _LLM_PRIVATE_CONTEXT_KEYS or compact in _LLM_PRIVATE_CONTEXT_KEYS
 
 
 def _string_list(value: Any) -> list[str]:

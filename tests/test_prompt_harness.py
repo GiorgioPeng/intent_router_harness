@@ -263,10 +263,41 @@ def test_finance_prompt_contains_combined_active_transfer_slot_rule() -> None:
     assert "一次性写入所有有依据的槽位" in prompt.system
     assert "任意收款人姓名、称呼或实体" in prompt.system
     assert "任意数字、中文数字或带单位的金额表达" in prompt.system
+    assert "他/她/对方/其/这个人/该收款人" in prompt.system
+    assert "不要只抽取收款人" in prompt.system
     assert "三百元" in prompt.system
     assert "叁佰圆" in prompt.system
+    assert "某公司，给对方汇款2000" in prompt.system
     assert 'amount="300"' in prompt.system
     assert "示例只用于说明槽位归属和输出结构，不能限制可识别文本范围" in prompt.system
+
+
+def test_bill_payment_skill_prompt_contains_supported_slots() -> None:
+    harness = load_prompt_harness(Path("examples/finance-router-harness.toml"))
+    assert harness is not None
+
+    prompt = harness.render(
+        surface="task_planning",
+        variables={
+            "message": "缴话费100元",
+            "execution_mode": "router_only",
+            "task_state_json": "{}",
+            "recommend_task_json": "[]",
+            "recent_messages_json": "[]",
+            "config_variables_json": "[]",
+            "planner_output_schema_json": "{}",
+        },
+        domain_codes=("finance",),
+        capabilities=("routing", "slots", "planning"),
+        loaded_skill_names=("bill-payment-routing",),
+    )
+
+    assert "AG_PAY_BILL" in prompt.system
+    assert "payment_item" in prompt.system
+    assert "水电费" in prompt.system
+    assert "话费" in prompt.system
+    assert "充话费100" in prompt.system
+    assert "ready_for_dispatch" in prompt.system
 
 
 def test_unknown_template_variables_are_preserved(tmp_path: Path) -> None:

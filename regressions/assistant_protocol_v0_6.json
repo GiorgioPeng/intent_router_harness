@@ -27,7 +27,7 @@
             "sessionId": "assistant_tc_s01",
             "txt": "给小明转账",
             "stream": true,
-            "custId": "C0001"
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -71,7 +71,7 @@
             "sessionId": "assistant_tc_s01",
             "txt": "给小明转账",
             "stream": true,
-            "custId": "C0001"
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -97,7 +97,7 @@
             "sessionId": "assistant_tc_s01",
             "txt": "200",
             "stream": true,
-            "custId": "C0001"
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -143,7 +143,8 @@
           "request": {
             "sessionId": "assistant_tc_s03",
             "txt": "我要转账",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -165,7 +166,8 @@
           "request": {
             "sessionId": "assistant_tc_s03",
             "txt": "小刚",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -187,7 +189,8 @@
           "request": {
             "sessionId": "assistant_tc_s03",
             "txt": "小红吧",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -209,7 +212,8 @@
           "request": {
             "sessionId": "assistant_tc_s03",
             "txt": "200",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -251,7 +255,8 @@
             "sessionId": "assistant_tc_s04",
             "txt": "我要转账",
             "stream": true,
-            "executionMode": "router_only"
+            "executionMode": "router_only",
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -274,7 +279,8 @@
             "sessionId": "assistant_tc_s04",
             "txt": "小刚",
             "stream": true,
-            "executionMode": "router_only"
+            "executionMode": "router_only",
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -297,7 +303,8 @@
             "sessionId": "assistant_tc_s04",
             "txt": "小红吧",
             "stream": true,
-            "executionMode": "router_only"
+            "executionMode": "router_only",
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -320,7 +327,8 @@
             "sessionId": "assistant_tc_s04",
             "txt": "200",
             "stream": true,
-            "executionMode": "router_only"
+            "executionMode": "router_only",
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -360,7 +368,8 @@
           "request": {
             "sessionId": "assistant_tc_s05",
             "txt": "给小明转账200",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -401,7 +410,8 @@
           "request": {
             "sessionId": "assistant_tc_s06",
             "txt": "给小明转账200",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -440,7 +450,8 @@
             "sessionId": "assistant_tc_s01",
             "taskId": "current_task_from_tc_s02",
             "completionSignal": 2,
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -477,7 +488,8 @@
             "sessionId": "assistant_tc_s08",
             "taskId": "node1",
             "completionSignal": 2,
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -516,7 +528,8 @@
           "request": {
             "sessionId": "assistant_tc_s09",
             "txt": "先查余额，再给张三转账 200 元，卡号 6222020100049999999，尾号 1234",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -563,7 +576,8 @@
           "request": {
             "sessionId": "assistant_tc_s10",
             "txt": "给小明转账",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -582,7 +596,8 @@
           "request": {
             "sessionId": "assistant_tc_s10",
             "txt": "不转了",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -616,7 +631,8 @@
           "request": {
             "sessionId": "assistant_tc_s11",
             "txt": "给小明转账",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -635,7 +651,8 @@
           "request": {
             "sessionId": "assistant_tc_s11",
             "txt": "先不转了，帮我查余额",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -669,7 +686,8 @@
           "request": {
             "sessionId": "assistant_tc_s12",
             "txt": "给小明转账",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -719,7 +737,8 @@
           "request": {
             "sessionId": "assistant_tc_s14",
             "txt": "给小明转账200",
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -738,7 +757,8 @@
             "sessionId": "assistant_tc_s14",
             "taskId": "current_task",
             "completionSignal": 2,
-            "stream": true
+            "stream": true,
+            "custID": "C0001"
           },
           "expectations": [
             {
@@ -787,7 +807,8 @@
                 "role": "assistant",
                 "content": "推荐事项：给小明转账200"
               }
-            ]
+            ],
+            "custID": "C0001"
           },
           "expectations": [
             {
